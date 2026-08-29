@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ActionCollection version="2" name="Krita">
+  <Actions category="DHTools">
+     <text>DH Tools</text>
+
+     <Action name="dh_show_radial_menu">
+       <icon></icon>
+       <text>Radial Menu</text>
+       <whatsThis>Opens the configurable radial menu at the cursor or the centre of the canvas.</whatsThis>
+       <toolTip>Open the radial menu</toolTip>
+       <iconText>Radial Menu</iconText>
+       <activationFlags>0</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_hide_selected">
+       <icon></icon>
+       <text>Hide Selected Layers</text>
+       <whatsThis>Hides every layer or mask selected in the Layers docker. Unlike toggling visibility this always hides, so a mixed selection ends up consistently hidden.</whatsThis>
+       <toolTip>Hide selected layers</toolTip>
+       <iconText>Hide Selected</iconText>
+       <activationFlags>1000</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_layer_above">
+       <icon></icon>
+       <text>Activate Layer Above</text>
+       <whatsThis>Steps the active node one position up the full layer stack, including masks and nested groups.</whatsThis>
+       <toolTip>Activate the node above</toolTip>
+       <iconText>Layer Above</iconText>
+       <activationFlags>1000</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_layer_below">
+       <icon></icon>
+       <text>Activate Layer Below</text>
+       <whatsThis>Steps the active node one position down the full layer stack, including masks and nested groups.</whatsThis>
+       <toolTip>Activate the node below</toolTip>
+       <iconText>Layer Below</iconText>
+       <activationFlags>1000</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_toggle_layer_cycle">
+       <icon></icon>
+       <text>Layer Cycle Mode</text>
+       <whatsThis>Arms a mode where dragging scrubs the active layer up and down the stack. Release or press Escape to commit on whichever layer you landed on.</whatsThis>
+       <toolTip>Scrub the active layer with a drag</toolTip>
+       <iconText>Cycle Mode</iconText>
+       <activationFlags>1000</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>true</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_add_levels_layer">
+       <icon></icon>
+       <text>Add Levels Filter Layer</text>
+       <whatsThis>Inserts a Levels filter layer above the active layer and opens its settings.</whatsThis>
+       <toolTip>Add a Levels filter layer</toolTip>
+       <iconText>Levels Layer</iconText>
+       <activationFlags>1000</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_add_hsv_layer">
+       <icon></icon>
+       <text>Add HSV/HSL Filter Layer</text>
+       <whatsThis>Inserts an HSV/HSL adjustment filter layer above the active layer and opens its settings.</whatsThis>
+       <toolTip>Add an HSV/HSL filter layer</toolTip>
+       <iconText>HSV Layer</iconText>
+       <activationFlags>1000</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_thirds_guides">
+       <icon></icon>
+       <text>Rule of Thirds Guides</text>
+       <whatsThis>Replaces the document guides with a rule-of-thirds grid and makes guides visible.</whatsThis>
+       <toolTip>Add rule of thirds guides</toolTip>
+       <iconText>Thirds Guides</iconText>
+       <activationFlags>1</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+
+     <Action name="dh_open_current_dir">
+       <icon></icon>
+       <text>Show Document Folder</text>
+       <whatsThis>Opens the folder containing the current document, or on Android just reports the path.</whatsThis>
+       <toolTip>Show the document folder</toolTip>
+       <iconText>Document Folder</iconText>
+       <activationFlags>1</activationFlags>
+       <activationConditions>0</activationConditions>
+       <shortcut></shortcut>
+       <isCheckable>false</isCheckable>
+       <statusTip></statusTip>
+     </Action>
+  </Actions>
+</ActionCollection>

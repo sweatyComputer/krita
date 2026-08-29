@@ -1,0 +1,21 @@
+<!DOCTYPE kpartgui SYSTEM "kpartgui.dtd">
+<kpartgui library="kritadhtools" version="1" translationDomain="krita">
+<MenuBar>
+    <Menu name="tools"><text>&amp;Tools</text>
+        <Menu name="DhTools"><text>DH Tools</text>
+            <Action name="dh_show_radial_menu"/>
+            <Separator/>
+            <Action name="dh_hide_selected"/>
+            <Action name="dh_layer_above"/>
+            <Action name="dh_layer_below"/>
+            <Action name="dh_toggle_layer_cycle"/>
+            <Separator/>
+            <Action name="dh_add_levels_layer"/>
+            <Action name="dh_add_hsv_layer"/>
+            <Action name="dh_thirds_guides"/>
+            <Separator/>
+            <Action name="dh_open_current_dir"/>
+        </Menu>
+    </Menu>
+</MenuBar>
+</kpartgui>

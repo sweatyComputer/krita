@@ -18,6 +18,9 @@ add_subdirectory( buginfo )
 add_subdirectory( samplescreencolor )
 add_subdirectory( dbexplorer )
 
+add_subdirectory( dhtools )
+
 if (ANDROID)
     add_subdirectory( spensettings )
+    add_subdirectory( touchgestures )
 endif()

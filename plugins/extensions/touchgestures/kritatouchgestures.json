@@ -1,0 +1,9 @@
+{
+    "Id": "Touch Gestures",
+    "Type": "Service",
+    "X-KDE-Library": "kritatouchgestures",
+    "X-KDE-ServiceTypes": [
+        "Krita/ViewPlugin"
+    ],
+    "X-Krita-Version": "28"
+}

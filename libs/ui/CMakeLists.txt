@@ -695,6 +695,10 @@ if (KRITA_USE_SURFACE_COLOR_MANAGEMENT_API)
         KisRootSurfaceInfoProxy.cpp
     )
 endif()
+if(ANDROID)
+    list(APPEND kritaui_LIB_SRCS input/KisAndroidGestureBridge.cpp)
+endif()
+
 
 
 kis_add_library(kritaui SHARED ${kritaui_HEADERS_MOC} ${kritaui_LIB_SRCS})

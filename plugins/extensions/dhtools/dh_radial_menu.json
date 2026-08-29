@@ -1,0 +1,76 @@
+{
+    "_comment": "DH radial menu layout. 'action' is a Krita action name (the objectName used in .action files and shortcut settings); a 'krita:' prefix is accepted and ignored, and if no action matches by name Krita falls back to matching a menu item's visible text. An item with 'children' is a submenu and its own action is ignored.",
+    "items": [
+        {
+            "label": "Layers",
+            "color": "#4A8FD4",
+            "children": [
+                { "label": "Paint Layer",  "action": "add_new_paint_layer" },
+                { "label": "Group",        "action": "add_new_group_layer" },
+                { "label": "Filter Layer", "action": "add_new_filter_layer" },
+                { "label": "Duplicate",    "action": "duplicatelayer" },
+                { "label": "Merge Down",   "action": "merge_layer" },
+                { "label": "Delete",       "action": "remove_layer" },
+                { "label": "Flatten",      "action": "flatten_layer" },
+                { "label": "Hide Selected","action": "dh_hide_selected" },
+                { "label": "Layer Above",  "action": "dh_layer_above" },
+                { "label": "Layer Below",  "action": "dh_layer_below" }
+            ]
+        },
+        {
+            "label": "Adjust",
+            "color": "#E74C3C",
+            "children": [
+                { "label": "Levels",  "action": "dh_add_levels_layer" },
+                { "label": "HSV/HSL", "action": "dh_add_hsv_layer" },
+                { "label": "Thirds",  "action": "dh_thirds_guides" }
+            ]
+        },
+        {
+            "label": "Masks",
+            "color": "#1ABC9C",
+            "children": [
+                { "label": "Transparency", "action": "add_new_transparency_mask" },
+                { "label": "Filter Mask",  "action": "add_new_filter_mask" },
+                { "label": "Quick Group",  "action": "create_quick_group" },
+                { "label": "Clip Group",   "action": "create_quick_clipping_group" }
+            ]
+        },
+        {
+            "label": "Select",
+            "color": "#9B59B6",
+            "children": [
+                { "label": "All",      "action": "select_all" },
+                { "label": "Deselect", "action": "deselect" },
+                { "label": "Reselect", "action": "reselect" },
+                { "label": "Invert",   "action": "invert_selection" },
+                { "label": "Opaque",   "action": "selectopaque" }
+            ]
+        },
+        {
+            "label": "Tools",
+            "color": "#E67E22",
+            "children": [
+                { "label": "Brush",        "action": "KritaShape/KisToolBrush" },
+                { "label": "Fill",         "action": "KritaFill/KisToolFill" },
+                { "label": "Move",         "action": "KritaTransform/KisToolMove" },
+                { "label": "Transform",    "action": "KisToolTransform" },
+                { "label": "Line",         "action": "KritaShape/KisToolLine" },
+                { "label": "Color Picker", "action": "KritaSelected/KisToolColorSampler" }
+            ]
+        },
+        {
+            "label": "Edit",
+            "color": "#F1C40F",
+            "children": [
+                { "label": "Undo",  "action": "edit_undo" },
+                { "label": "Redo",  "action": "edit_redo" },
+                { "label": "Cut",   "action": "edit_cut" },
+                { "label": "Copy",  "action": "edit_copy" },
+                { "label": "Paste", "action": "edit_paste" }
+            ]
+        },
+        { "label": "Cycle Mode", "color": "#16A085", "action": "dh_toggle_layer_cycle" },
+        { "label": "Save",       "color": "#7F8C8D", "action": "file_save" }
+    ]
+}

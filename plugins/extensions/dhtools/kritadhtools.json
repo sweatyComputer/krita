@@ -1,0 +1,9 @@
+{
+    "Id": "DH Tools",
+    "Type": "Service",
+    "X-KDE-Library": "kritadhtools",
+    "X-KDE-ServiceTypes": [
+        "Krita/ViewPlugin"
+    ],
+    "X-Krita-Version": "28"
+}
