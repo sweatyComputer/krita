@@ -56,7 +56,6 @@
 #include "config-qt-patches-present.h"
 
 #ifdef Q_OS_ANDROID
-#include <input/KisAndroidGestureBridge.h>
 #include <QtAndroid>
 #include <KisAndroidCrashHandler.h>
 #include <KisAndroidUtils.h>
@@ -190,24 +189,6 @@ Java_org_krita_android_JNIWrappers_hasMainWindowLoaded(JNIEnv * /*env*/,
 
     KisMainWindow *mainWindow = KisPart::instance()->currentMainwindow();
     return (bool)mainWindow;
-}
-
-/**
- * Three-finger drag, forwarded raw from MainActivity.dispatchTouchEvent().
- *
- * \p phase is KisAndroidGestureBridge::Phase, \p dx / \p dy are the centroid
- * offset from where the gesture started, in density-independent pixels.
- * Returns true when Krita has taken the gesture, which tells the Activity to
- * swallow the events instead of forwarding them to Qt.
- */
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_krita_android_JNIWrappers_threeFingerGesture(JNIEnv* /*env*/,
-                                                      jobject /*obj*/,
-                                                      jint phase,
-                                                      jfloat dx,
-                                                      jfloat dy)
-{
-    return static_cast<jboolean>(KisAndroidGestureBridge::postGesture(phase, dx, dy));
 }
 
 extern "C" JNIEXPORT void JNICALL

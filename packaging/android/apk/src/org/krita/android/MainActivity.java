@@ -46,31 +46,6 @@ public class MainActivity extends QtActivity {
     private static String applicationLoadingText = "";
     private boolean haveLibsLoaded = false;
     private boolean serviceStarted = false;
-    // --- three-finger gesture interception ---------------------------------
-    // Mirrors KisAndroidGestureBridge::Phase on the native side.
-    private static final int GESTURE_BEGIN  = 0;
-    private static final int GESTURE_UPDATE = 1;
-    private static final int GESTURE_END    = 2;
-    private static final int GESTURE_CANCEL = 3;
-
-    private static final int GESTURE_FINGERS = 3;
-
-    // How far three fingers must travel before we decide this is a drag and
-    // not a tap, in dp. Krita's own input system already binds three-finger
-    // TAPS to actions, so taking over at touch-down would quietly break them.
-    private static final float GESTURE_TAKEOVER_SLOP_DP = 8f;
-
-    // "tracking" means the native side accepted the gesture and wants deltas.
-    // "swallowing" means we keep eating touch events until the hand leaves the
-    // glass, so Qt never sees a half-finished pointer sequence. If the native
-    // side declines the gesture (disabled in settings, no main window yet) we
-    // set neither and stay out of the way completely.
-    private boolean gestureWatching = false;
-    private boolean gestureTracking = false;
-    private boolean gestureSwallowing = false;
-    private float gestureStartX = 0f;
-    private float gestureStartY = 0f;
-    private float displayDensity = 1f;
     private boolean inFullScreen = false;
     private DonationDialog mDonationDialog = null;
 
@@ -95,10 +70,6 @@ public class MainActivity extends QtActivity {
         Log.i(TAG, "TouchSlop: " + ViewConfiguration.get(this).getScaledTouchSlop());
         Log.i(TAG, "LibsLoaded");
         haveLibsLoaded = true;
-        displayDensity = getResources().getDisplayMetrics().density;
-        if (displayDensity <= 0f) {
-            displayDensity = 1f;
-        }
 
         DonationHelper.getInstance();
         DonationProduct.initAllProducts(this);
@@ -209,158 +180,6 @@ public class MainActivity extends QtActivity {
         }
 
         return super.onKeyUp(keyCode, event);
-    }
-
-    /**
-     * Three-finger DRAGS are an Android-shell concern, so we grab them here,
-     * before Qt sees them. Qt has no three-finger drag recognizer of its own
-     * and would just try to paint with the extra pointers.
-     *
-     * Three-finger TAPS are left alone: Krita's own KisTouchGestureAction
-     * already binds those, and stealing them here would silently break
-     * whatever the user has mapped in Canvas Input Settings. We only take the
-     * gesture over once the fingers have actually travelled.
-     *
-     * Everything past "three fingers moved this far" is decided natively in
-     * KisAndroidGestureBridge, which reads kritarc, so the mapping and the
-     * sensitivity live in Krita's own settings rather than in Java.
-     */
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        if (haveLibsLoaded) {
-            try {
-                if (updateGestureState(event)) {
-                    return true;
-                }
-            } catch (Exception | UnsatisfiedLinkError e) {
-                Log.e(TAG, "Three-finger gesture handling failed", e);
-                gestureWatching = false;
-                gestureTracking = false;
-                gestureSwallowing = false;
-            }
-        }
-        return super.dispatchTouchEvent(event);
-    }
-
-    /**
-     * @return true when the event was consumed by the gesture handler.
-     */
-    private boolean updateGestureState(MotionEvent event) {
-        final int action = event.getActionMasked();
-        final int pointerCount = event.getPointerCount();
-
-        if (gestureSwallowing) {
-            switch (action) {
-            case MotionEvent.ACTION_MOVE:
-                if (gestureTracking) {
-                    final float dx = (centroidX(event) - gestureStartX) / displayDensity;
-                    final float dy = (centroidY(event) - gestureStartY) / displayDensity;
-                    JNIWrappers.threeFingerGesture(GESTURE_UPDATE, dx, dy);
-                }
-                return true;
-
-            case MotionEvent.ACTION_POINTER_UP:
-                // pointerCount still counts the finger that is on its way up.
-                if (pointerCount - 1 < GESTURE_FINGERS) {
-                    endGesture(GESTURE_END);
-                }
-                return true;
-
-            case MotionEvent.ACTION_UP:
-                endGesture(GESTURE_END);
-                gestureSwallowing = false;
-                return true;
-
-            case MotionEvent.ACTION_CANCEL:
-                endGesture(GESTURE_CANCEL);
-                gestureSwallowing = false;
-                return true;
-
-            default:
-                // Keep eating everything, including a fourth finger landing,
-                // until the hand actually leaves the glass. Handing Qt a
-                // half-finished pointer sequence is how you get phantom dabs.
-                return true;
-            }
-        }
-
-        // Watch from the frame where the third finger lands, but do not claim
-        // anything yet -- a three-finger tap belongs to Krita's own input
-        // system, and we only take over once it is clearly a drag.
-        if (action == MotionEvent.ACTION_POINTER_DOWN && pointerCount == GESTURE_FINGERS) {
-            gestureWatching = true;
-            gestureStartX = centroidX(event);
-            gestureStartY = centroidY(event);
-            return false;
-        }
-
-        if (!gestureWatching) {
-            return false;
-        }
-
-        if (action == MotionEvent.ACTION_MOVE && pointerCount >= GESTURE_FINGERS) {
-            final float dx = (centroidX(event) - gestureStartX) / displayDensity;
-            final float dy = (centroidY(event) - gestureStartY) / displayDensity;
-
-            if (Math.max(Math.abs(dx), Math.abs(dy)) < GESTURE_TAKEOVER_SLOP_DP) {
-                return false;
-            }
-
-            if (!JNIWrappers.threeFingerGesture(GESTURE_BEGIN, 0f, 0f)) {
-                // Native side is not interested; stop asking for this gesture.
-                gestureWatching = false;
-                return false;
-            }
-
-            gestureTracking = true;
-            gestureSwallowing = true;
-
-            // Qt has a stroke in flight from the first finger. Cancel it so we
-            // do not leave a stray dab where the takeover happened.
-            MotionEvent cancel = MotionEvent.obtain(event);
-            cancel.setAction(MotionEvent.ACTION_CANCEL);
-            super.dispatchTouchEvent(cancel);
-            cancel.recycle();
-
-            JNIWrappers.threeFingerGesture(GESTURE_UPDATE, dx, dy);
-            return true;
-        }
-
-        if (action == MotionEvent.ACTION_UP
-            || action == MotionEvent.ACTION_CANCEL
-            || (action == MotionEvent.ACTION_POINTER_UP && pointerCount - 1 < GESTURE_FINGERS)) {
-            // Fingers left without travelling: it was a tap, and it is not ours.
-            gestureWatching = false;
-        }
-
-        return false;
-    }
-
-    private void endGesture(int phase) {
-        gestureWatching = false;
-        if (!gestureTracking) {
-            return;
-        }
-        gestureTracking = false;
-        JNIWrappers.threeFingerGesture(phase, 0f, 0f);
-    }
-
-    private float centroidX(MotionEvent event) {
-        float sum = 0f;
-        final int count = event.getPointerCount();
-        for (int i = 0; i < count; i++) {
-            sum += event.getX(i);
-        }
-        return count > 0 ? sum / count : 0f;
-    }
-
-    private float centroidY(MotionEvent event) {
-        float sum = 0f;
-        final int count = event.getPointerCount();
-        for (int i = 0; i < count; i++) {
-            sum += event.getY(i);
-        }
-        return count > 0 ? sum / count : 0f;
     }
 
     @Override

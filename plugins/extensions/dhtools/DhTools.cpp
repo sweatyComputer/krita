@@ -8,7 +8,6 @@
 #include "DhNodeUtils.h"
 #include "DhLayerCycle.h"
 #include "DhRadialMenu.h"
-#include "DhBrushHud.h"
 #include "KisDhRadialSettings.h"
 
 #include <QAction>
@@ -42,8 +41,6 @@
 #include <KisGlobalResourcesInterface.h>
 #include <canvas/kis_guides_config.h>
 #include <kis_canvas2.h>
-#include <KisView.h>
-#include <kis_canvas_decoration.h>
 #include <kis_preference_set_registry.h>
 #include <kis_debug.h>
 
@@ -82,14 +79,6 @@ DhTools::DhTools(QObject *parent, const QVariantList &)
     m_layerCycle = new DhLayerCycle(viewManager(), this);
     connect(m_layerCycle, SIGNAL(disarmed()), this, SLOT(slotLayerCycleDisarmed()));
 
-    // The brush HUD is a per-view canvas decoration, but this plugin is created
-    // once per main window, so cover the view that already exists and then watch
-    // for any opened later.
-    if (KisMainWindow *window = KisPart::instance()->currentMainwindow()) {
-        attachBrushHud(window->activeView());
-    }
-    connect(KisPart::instance(), SIGNAL(sigViewAdded(KisView *)),
-            this, SLOT(slotViewAdded(KisView *)), Qt::UniqueConnection);
 }
 
 DhTools::~DhTools()
@@ -285,23 +274,6 @@ void DhTools::slotShowRadialMenu()
     }
 
     m_radialMenu->popupAt(position);
-}
-
-void DhTools::slotViewAdded(KisView *view)
-{
-    attachBrushHud(view);
-}
-
-void DhTools::attachBrushHud(KisView *view)
-{
-    if (!view || !view->canvasBase()) return;
-
-    // Views can be handed to us more than once (split views, a second window on
-    // the same document); adding a second HUD would just draw everything twice.
-    if (view->canvasBase()->decoration(DhBrushHud::ID)) return;
-
-    KisCanvasDecorationSP hud(new DhBrushHud(view));
-    view->canvasBase()->addDecoration(hud);
 }
 
 void DhTools::slotOpenCurrentDirectory()

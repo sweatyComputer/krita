@@ -25,6 +25,8 @@ public:
     enum Shortcut {
         PrimaryAlternateChangeSizeShortcut, ///< Default Mapping: Shift+Left Mouse
         SecondaryAlternateChangeSizeShortcut, ///< Secondary Mode (snap to closest pixel value): Shift+Z+Left Mouse
+        AdjustBrushShortcut, ///< Drag: vertical changes size, horizontal changes opacity. Default: three-finger drag
+        ScrollBrushShortcut, ///< 2D tracker: horizontal size, vertical opacity, both at once
     };
 
     void activate(int shortcut) override;

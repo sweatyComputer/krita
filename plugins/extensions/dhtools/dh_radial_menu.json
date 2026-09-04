@@ -1,76 +1,197 @@
 {
-    "_comment": "DH radial menu layout. 'action' is a Krita action name (the objectName used in .action files and shortcut settings); a 'krita:' prefix is accepted and ignored, and if no action matches by name Krita falls back to matching a menu item's visible text. An item with 'children' is a submenu and its own action is ignored.",
-    "items": [
+  "version": 2,
+  "items": [
+    {
+      "label": "Layers",
+      "color": "#4A8FD4",
+      "layout": "GRID",
+      "columns": 2,
+      "children": [
         {
-            "label": "Layers",
-            "color": "#4A8FD4",
-            "children": [
-                { "label": "Paint Layer",  "action": "add_new_paint_layer" },
-                { "label": "Group",        "action": "add_new_group_layer" },
-                { "label": "Filter Layer", "action": "add_new_filter_layer" },
-                { "label": "Duplicate",    "action": "duplicatelayer" },
-                { "label": "Merge Down",   "action": "merge_layer" },
-                { "label": "Delete",       "action": "remove_layer" },
-                { "label": "Flatten",      "action": "flatten_layer" },
-                { "label": "Hide Selected","action": "dh_hide_selected" },
-                { "label": "Layer Above",  "action": "dh_layer_above" },
-                { "label": "Layer Below",  "action": "dh_layer_below" }
-            ]
+          "label": "Paint",
+          "action": "krita:add_new_paint_layer",
+          "icon": "dh:layer-add"
         },
         {
-            "label": "Adjust",
-            "color": "#E74C3C",
-            "children": [
-                { "label": "Levels",  "action": "dh_add_levels_layer" },
-                { "label": "HSV/HSL", "action": "dh_add_hsv_layer" },
-                { "label": "Thirds",  "action": "dh_thirds_guides" }
-            ]
+          "label": "Group",
+          "action": "krita:add_new_group_layer",
+          "icon": "dh:layer-group"
         },
         {
-            "label": "Masks",
-            "color": "#1ABC9C",
-            "children": [
-                { "label": "Transparency", "action": "add_new_transparency_mask" },
-                { "label": "Filter Mask",  "action": "add_new_filter_mask" },
-                { "label": "Quick Group",  "action": "create_quick_group" },
-                { "label": "Clip Group",   "action": "create_quick_clipping_group" }
-            ]
+          "label": "Filter",
+          "action": "krita:add_new_adjustment_layer",
+          "icon": "dh:gear"
         },
         {
-            "label": "Select",
-            "color": "#9B59B6",
-            "children": [
-                { "label": "All",      "action": "select_all" },
-                { "label": "Deselect", "action": "deselect" },
-                { "label": "Reselect", "action": "reselect" },
-                { "label": "Invert",   "action": "invert_selection" },
-                { "label": "Opaque",   "action": "selectopaque" }
-            ]
+          "label": "Duplicate",
+          "action": "krita:duplicatelayer",
+          "icon": "dh:layer-copy"
         },
         {
-            "label": "Tools",
-            "color": "#E67E22",
-            "children": [
-                { "label": "Brush",        "action": "KritaShape/KisToolBrush" },
-                { "label": "Fill",         "action": "KritaFill/KisToolFill" },
-                { "label": "Move",         "action": "KritaTransform/KisToolMove" },
-                { "label": "Transform",    "action": "KisToolTransform" },
-                { "label": "Line",         "action": "KritaShape/KisToolLine" },
-                { "label": "Color Picker", "action": "KritaSelected/KisToolColorSampler" }
-            ]
+          "label": "Merge",
+          "action": "krita:merge_layer",
+          "icon": "dh:merge"
         },
         {
-            "label": "Edit",
-            "color": "#F1C40F",
-            "children": [
-                { "label": "Undo",  "action": "edit_undo" },
-                { "label": "Redo",  "action": "edit_redo" },
-                { "label": "Cut",   "action": "edit_cut" },
-                { "label": "Copy",  "action": "edit_copy" },
-                { "label": "Paste", "action": "edit_paste" }
-            ]
+          "label": "Flatten",
+          "action": "krita:flatten_layer",
+          "icon": "dh:flatten"
         },
-        { "label": "Cycle Mode", "color": "#16A085", "action": "dh_toggle_layer_cycle" },
-        { "label": "Save",       "color": "#7F8C8D", "action": "file_save" }
-    ]
+        {
+          "label": "Delete",
+          "action": "krita:remove_layer",
+          "icon": "dh:layer-delete"
+        },
+        {
+          "label": "Hide",
+          "action": "hide_selected.py",
+          "icon": "dh:eye-off"
+        },
+        {
+          "label": "Above",
+          "action": "layer_above.py",
+          "col_span": 1.0
+        },
+        {
+          "label": "Below",
+          "action": "layer_below.py",
+          "col_span": 1.0
+        }
+      ]
+    },
+    {
+      "label": "Open Dir",
+      "action": "open_current_dir.py",
+      "icon": "dh:folder"
+    },
+    {
+      "label": "Masks",
+      "color": "#1ABC9C",
+      "layout": "SPROUT",
+      "columns": 2,
+      "children": [
+        {
+          "label": "Transparency",
+          "action": "krita:add_new_transparency_mask",
+          "icon": "dh:mask",
+          "col_span": 2
+        },
+        {
+          "label": "Filter Mask",
+          "action": "krita:add_new_filter_mask",
+          "icon": "dh:gear",
+          "col_span": 2
+        },
+        {
+          "label": "Quick Group",
+          "action": "krita:create_quick_group",
+          "icon": "dh:layer-group",
+          "col_span": 2
+        },
+        {
+          "label": "Clip Group",
+          "action": "krita:create_quick_clipping_group",
+          "icon": "dh:crop",
+          "col_span": 2
+        }
+      ]
+    },
+    {
+      "label": "Select",
+      "color": "#9B59B6",
+      "layout": "SPROUT",
+      "columns": 3,
+      "children": [
+        {
+          "label": "All",
+          "action": "krita:select_all",
+          "icon": "dh:select"
+        },
+        {
+          "label": "None",
+          "action": "krita:deselect",
+          "icon": "dh:deselect"
+        },
+        {
+          "label": "Invert",
+          "action": "krita:invert_selection",
+          "icon": "dh:invert"
+        },
+        {
+          "label": "Reselect",
+          "action": "krita:reselect",
+          "col_span": 1.5
+        },
+        {
+          "label": "Opaque",
+          "action": "krita:selectopaque",
+          "col_span": 1.5
+        }
+      ]
+    },
+    {
+      "label": "Tools",
+      "color": "#E67E22",
+      "layout": "GRID",
+      "columns": 3,
+      "cell_width": 64,
+      "cell_height": 58,
+      "children": [
+        {
+          "label": "Brush",
+          "action": "krita:KritaShape/KisToolBrush",
+          "icon": "dh:brush",
+          "shape": "CIRCLE"
+        },
+        {
+          "label": "Fill",
+          "action": "krita:KritaFill/KisToolFill",
+          "icon": "dh:fill",
+          "shape": "CIRCLE"
+        },
+        {
+          "label": "Move",
+          "action": "krita:KritaTransform/KisToolMove",
+          "icon": "dh:move",
+          "shape": "CIRCLE"
+        },
+        {
+          "label": "Transform",
+          "action": "krita:KisToolTransform",
+          "icon": "dh:transform",
+          "shape": "CIRCLE"
+        },
+        {
+          "label": "Picker",
+          "action": "krita:KritaSelected/KisToolColorPicker",
+          "icon": "dh:picker",
+          "shape": "CIRCLE"
+        },
+        {
+          "label": "Editor",
+          "action": "krita:show_brush_editor",
+          "icon": "dh:gear",
+          "shape": "CIRCLE"
+        }
+      ]
+    },
+    {
+      "label": "Cycle Select",
+      "color": "#2ECC71",
+      "action": "krita:Cycle selection tools",
+      "icon": "dh:select"
+    },
+    {
+      "label": "Reset Canvas",
+      "color": "#7F8C8D",
+      "action": "krita:reset_canvas_rotation",
+      "icon": "dh:rotate"
+    },
+    {
+      "label": "Cycle Mode",
+      "color": "#16A085",
+      "action": "krita:dh_toggle_layer_cycle",
+      "icon": "dh:eye"
+    }
+  ]
 }

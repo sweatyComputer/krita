@@ -15,7 +15,6 @@
 class KisAction;
 class DhLayerCycle;
 class DhRadialMenu;
-class KisView;
 
 /**
  * Native port of the dh_krita_tools / dh_radial_menu Python plugins.
@@ -43,11 +42,9 @@ private Q_SLOTS:
     void slotLayerCycleDisarmed();
     void slotShowRadialMenu();
     void slotOpenCurrentDirectory();
-    void slotViewAdded(KisView *view);
 
 private:
     void insertFilterLayer(const QString &layerName, const QString &filterId);
-    void attachBrushHud(KisView *view);
 
     QPointer<KisAction> m_actionToggleCycle;
     DhLayerCycle *m_layerCycle{nullptr};

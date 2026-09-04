@@ -3,8 +3,11 @@ set(kritadhtools_SOURCES
     DhNodeUtils.cpp
     DhLayerCycle.cpp
     DhRadialConfig.cpp
+    DhRadialDesign.cpp
+    DhRadialIcons.cpp
+    DhRadialPresets.cpp
+    DhRadialLayout.cpp
     DhRadialMenu.cpp
-    DhBrushHud.cpp
     KisDhRadialSettings.cpp
     )
 

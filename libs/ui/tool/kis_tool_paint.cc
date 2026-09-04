@@ -7,6 +7,8 @@
 
 #include "kis_tool_paint.h"
 
+#include <QPainterPath>
+
 #include <algorithm>
 
 #include <QWidget>
@@ -264,6 +266,31 @@ void KisToolPaint::paint(QPainter &gc, const KoViewConverter &converter)
     Q_UNUSED(converter);
 
     KisOptimizedBrushOutline path = tryFixBrushOutline(pixelToView(m_currentOutline));
+
+    // While the opacity is being dragged, fill the brush outline with the paint
+    // colour at that opacity. Showing the value as the value beats printing a
+    // number: it is literally what the next dab will look like.
+    if (m_showOpacityInOutline && canvas() && canvas()->resourceManager()) {
+        const qreal opacity =
+            canvas()->resourceManager()->resource(KoCanvasResource::Opacity).toReal();
+        QColor fill = canvas()->resourceManager()->
+            resource(KoCanvasResource::ForegroundColor).value<KoColor>().toQColor();
+        fill.setAlphaF(qBound(0.0, opacity, 1.0));
+
+        QPainterPath filled;
+        for (auto it = path.begin(); it != path.end(); ++it) {
+            filled.addPolygon(*it);
+        }
+        filled.setFillRule(Qt::WindingFill);
+
+        gc.save();
+        gc.setRenderHint(QPainter::Antialiasing, true);
+        gc.setPen(Qt::NoPen);
+        gc.setBrush(fill);
+        gc.drawPath(filled);
+        gc.restore();
+    }
+
     paintToolOutline(&gc, path);
 
     m_colorSamplerHelper.paint(gc, converter);

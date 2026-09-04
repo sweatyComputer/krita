@@ -28,6 +28,7 @@ public:
         KisToolMove,
         KisToolTransform,
         ToggleEraserPreset,
+        ShowRadialMenu, ///< Opens the DH radial menu, if that plugin is loaded
     };
 
     KisTouchGestureAction();

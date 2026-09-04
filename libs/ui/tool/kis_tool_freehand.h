@@ -120,6 +120,23 @@ private:
     QPointF m_initialGestureDocPoint;
     QPointF m_lastDocumentPoint;
     qreal m_lastPaintOpSize {0.0};
+    qreal m_lastPaintOpacity {1.0};
+
+    // AdjustBrush commits to an axis once the drag clears the dead zone, so a
+    // wobbly finger cannot flip you from size to opacity mid-stroke.
+    bool m_adjustAxisResolved {false};
+    bool m_adjustAxisVertical {false};
+
+    // How much of the screen's width a drag must cover to sweep opacity from 0
+    // to 1. Read from kritarc at the start of each gesture so it can be tuned
+    // without a rebuild.
+    qreal m_opacityDragFraction {0.25};
+
+    // Scroll-tracker feel, mirroring Shortcut Composer's defaults:
+    // pixels_in_unit = 50 / sensitivity_scale, so 25px per size unit and
+    // 5px per 1% of opacity. Both read from kritarc at gesture start.
+    qreal m_scrollSizePixels {25.0};
+    qreal m_scrollOpacityPixels {5.0};
     QPoint m_initialGestureGlobalPoint;
 
     bool m_paintopBasedSamplingInAction {false};

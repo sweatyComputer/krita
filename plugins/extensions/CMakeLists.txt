@@ -22,5 +22,4 @@ add_subdirectory( dhtools )
 
 if (ANDROID)
     add_subdirectory( spensettings )
-    add_subdirectory( touchgestures )
 endif()

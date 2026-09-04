@@ -1,5 +1,42 @@
 <!DOCTYPE RCC><RCC version="1.0">
  <qresource prefix="/dhtools">
   <file>dh_radial_menu.json</file>
+  <file>icons/back.svg</file>
+  <file>icons/brush.svg</file>
+  <file>icons/canvas.svg</file>
+  <file>icons/crop.svg</file>
+  <file>icons/deselect.svg</file>
+  <file>icons/dot.svg</file>
+  <file>icons/eraser.svg</file>
+  <file>icons/eye-off.svg</file>
+  <file>icons/eye.svg</file>
+  <file>icons/fill.svg</file>
+  <file>icons/flatten.svg</file>
+  <file>icons/folder.svg</file>
+  <file>icons/gear.svg</file>
+  <file>icons/grid.svg</file>
+  <file>icons/invert.svg</file>
+  <file>icons/layer-add.svg</file>
+  <file>icons/layer-copy.svg</file>
+  <file>icons/layer-delete.svg</file>
+  <file>icons/layer-group.svg</file>
+  <file>icons/layer.svg</file>
+  <file>icons/lock.svg</file>
+  <file>icons/mask.svg</file>
+  <file>icons/merge.svg</file>
+  <file>icons/mirror.svg</file>
+  <file>icons/more.svg</file>
+  <file>icons/move.svg</file>
+  <file>icons/picker.svg</file>
+  <file>icons/redo.svg</file>
+  <file>icons/rotate.svg</file>
+  <file>icons/save.svg</file>
+  <file>icons/script.svg</file>
+  <file>icons/select.svg</file>
+  <file>icons/star.svg</file>
+  <file>icons/text.svg</file>
+  <file>icons/transform.svg</file>
+  <file>icons/undo.svg</file>
+  <file>icons/zoom.svg</file>
  </qresource>
 </RCC>

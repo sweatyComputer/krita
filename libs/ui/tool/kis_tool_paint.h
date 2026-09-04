@@ -67,6 +67,13 @@ protected:
 
     virtual void requestUpdateOutline(const QPointF &outlineDocPoint, const KoPointerEvent *event);
 
+    /**
+     * Set while an AdjustBrush drag is changing the opacity, so paint() fills
+     * the brush outline with the paint colour at that opacity instead of just
+     * stroking it. Owned by KisToolFreehand; harmless on tools that never set it.
+     */
+    bool m_showOpacityInOutline {false};
+
     /** If the paint tool support outline like brushes, set to true.
     *   If not (e.g. gradient tool), set to false. Default is false.
     */

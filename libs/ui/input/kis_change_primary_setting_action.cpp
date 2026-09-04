@@ -27,6 +27,8 @@ KisChangePrimarySettingAction::KisChangePrimarySettingAction()
     QHash<QString, int> shortcuts;
     shortcuts.insert(i18n("Normal"), PrimaryAlternateChangeSizeShortcut);
     shortcuts.insert(i18n("Snap"), SecondaryAlternateChangeSizeShortcut);
+    shortcuts.insert(i18n("Size and Opacity"), AdjustBrushShortcut);
+    shortcuts.insert(i18n("Scroll Size or Opacity"), ScrollBrushShortcut);
     setShortcutIndexes(shortcuts);
 }
 
@@ -39,6 +41,12 @@ KisTool::ToolAction KisChangePrimarySettingAction::decodeAction(int shortcut) co
             break;
         case 1:
             action = KisTool::ToolAction::AlternateChangeSizeSnap;
+            break;
+        case AdjustBrushShortcut:
+            action = KisTool::ToolAction::AlternateAdjustBrush;
+            break;
+        case ScrollBrushShortcut:
+            action = KisTool::ToolAction::AlternateScrollBrush;
             break;
     }
     return action;

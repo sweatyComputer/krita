@@ -9,6 +9,7 @@
 
 [Change Primary Setting]
 0={0;2;[1000020];1;0;0}
+1={2;4;[];0;0;8}
 
 [Exposure or Gamma]
 0={0;2;[59];1;0;0}

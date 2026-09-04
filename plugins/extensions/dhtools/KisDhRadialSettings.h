@@ -8,10 +8,12 @@
 #define KISDHRADIALSETTINGS_H
 
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <kis_preference_set_registry.h>
 
 #include "DhRadialConfig.h"
+#include "DhRadialDesign.h"
 
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -19,15 +21,23 @@ class QLineEdit;
 class QPushButton;
 class QDoubleSpinBox;
 class QSpinBox;
+class QCheckBox;
+class QComboBox;
+class QWidget;
+class QFormLayout;
 
 /**
- * "DH Radial Menu" page in Configure Krita: a tree editor for the wedges.
+ * "DH Radial Menu" page in Configure Krita: a tree editor for the wedges,
+ * plus a full editor for the design block (colours, sizing, panel layouts,
+ * presets) that used to only be authorable on desktop.
  *
- * Same model as the Python version this replaces -- an item with children is a
- * branch that opens a sub-ring, an item with an action is a leaf that fires it
- * -- so an existing layout reads straight in. The difference is the action
- * picker, which enumerates the live action collection instead of a hand-kept
- * list, so it can never drift out of date with the build you are running.
+ * The item tree keeps the live DhRadialItemSP each row was built from
+ * attached to the row (Qt::UserRole), rather than re-parsing text back into
+ * fresh objects on save. Anything this build does not have a field for -
+ * unknown JSON keys from a newer desktop plugin - lives in that same object's
+ * `raw` and survives a save untouched. Rebuilding fresh objects from column
+ * text, the old approach, silently dropped every v2 field it did not know
+ * about; this does not.
  */
 class KisDhRadialSettings : public KisPreferenceSet
 {
@@ -61,16 +71,47 @@ private Q_SLOTS:
     void slotRemove();
     void slotMoveUp();
     void slotMoveDown();
+    void slotIconEdited(const QString &text);
+    void slotTooltipEdited(const QString &text);
+    void slotShapeChanged(int index);
+    void slotLayoutChanged(int index);
+    void slotColumnsChanged(int value);
+    void slotColSpanChanged(double value);
+    void slotCellWidthChanged(int value);
+    void slotCellHeightChanged(int value);
+    void slotDrawerDirectionChanged(int index);
+    void slotDrawerFlowChanged(int index);
+    void slotDrawerAlignChanged(int index);
+    void slotApplyPreset();
+    void slotDesignColourClicked();
 
 private:
     void buildUi();
+    QWidget *buildItemsTab(QWidget *parent);
+    QWidget *buildDesignTab(QWidget *parent);
+
     void populateTree(const QList<DhRadialItemSP> &items);
-    QTreeWidgetItem *makeRow(const DhRadialItemSP &item) const;
+    QTreeWidgetItem *makeRow(const DhRadialItemSP &item);
     void refreshRow(QTreeWidgetItem *row) const;
     QList<DhRadialItemSP> harvest(const QTreeWidgetItem *parent) const;
     void move(int delta);
     void updateSwatch(const QColor &colour);
     void updateButtonStates();
+    void updateDetailVisibility();
+    DhRadialItemSP currentItem() const;
+
+    // ----- design tab helpers -----------------------------------------------
+    QSpinBox *addIntRow(const QString &key, QFormLayout *form, const QString &label,
+                        int min, int max, const QString &suffix = QString());
+    QDoubleSpinBox *addRealRow(const QString &key, QFormLayout *form, const QString &label,
+                               double min, double max, double step = 0.05);
+    QCheckBox *addBoolRow(const QString &key, QFormLayout *form, const QString &label);
+    QComboBox *addComboRow(const QString &key, QFormLayout *form, const QString &label,
+                           const QStringList &options);
+    QPushButton *addColourRow(const QString &key, QFormLayout *form, const QString &label);
+
+    DhRadialDesign designFromWidgets() const;
+    void designToWidgets(const DhRadialDesign &design);
 
     QTreeWidget *m_tree{nullptr};
     QLineEdit *m_label{nullptr};
@@ -83,8 +124,31 @@ private:
     QPushButton *m_remove{nullptr};
     QPushButton *m_up{nullptr};
     QPushButton *m_down{nullptr};
-    QSpinBox *m_outerRadius{nullptr};
-    QDoubleSpinBox *m_innerRatio{nullptr};
+
+    // ----- per-item v2 fields -------------------------------------------
+    QLineEdit *m_icon{nullptr};
+    QLineEdit *m_tooltip{nullptr};
+    QComboBox *m_shape{nullptr};
+    QComboBox *m_layout{nullptr};
+    QSpinBox *m_columns{nullptr};
+    QDoubleSpinBox *m_colSpan{nullptr};
+    QSpinBox *m_cellWidth{nullptr};
+    QSpinBox *m_cellHeight{nullptr};
+    QComboBox *m_drawerDirection{nullptr};
+    QComboBox *m_drawerFlow{nullptr};
+    QComboBox *m_drawerAlign{nullptr};
+
+    // ----- design tab: every control keyed by the same name design.py /
+    // DhRadialDesign::read() use, so applying a preset or (de)serialising is
+    // one lookup instead of fifty named members. -----------------------------
+    QMap<QString, QSpinBox *> m_designInts;
+    QMap<QString, QDoubleSpinBox *> m_designReals;
+    QMap<QString, QCheckBox *> m_designBools;
+    QMap<QString, QComboBox *> m_designCombos;
+    QMap<QString, QPushButton *> m_designColours;
+    QMap<QString, QColor> m_designColourValues;
+    QComboBox *m_presetCombo{nullptr};
+    QLineEdit *m_fontFamily{nullptr};
 
     bool m_updatingFields{false};
 };

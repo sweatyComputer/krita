@@ -126,6 +126,8 @@ public:
         AlternateThird,
         AlternateFourth,
         AlternateFifth,
+        AlternateAdjustBrush, ///< Drag to change size (vertical) and opacity (horizontal)
+        AlternateScrollBrush, ///< 2D tracker: size (horizontal) and opacity (vertical), both at once
         Alternate_NONE = 10000
     };
 
@@ -142,6 +144,8 @@ public:
         Third = AlternateThird,
         Fourth = AlternateFourth,
         Fifth = AlternateFifth,
+        AdjustBrush = AlternateAdjustBrush, // Default: three-finger drag
+        ScrollBrush = AlternateScrollBrush,
         NONE = 10000
     };
 

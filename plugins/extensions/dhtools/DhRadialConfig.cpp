@@ -23,6 +23,7 @@ namespace {
 DhRadialItemSP parseItem(const QJsonObject &object)
 {
     DhRadialItemSP item(new DhRadialItem());
+    item->raw = object;
     item->label = object.value(QStringLiteral("label")).toString();
     item->action = object.value(QStringLiteral("action")).toString();
 
@@ -34,6 +35,29 @@ DhRadialItemSP parseItem(const QJsonObject &object)
         }
     }
 
+    // ----- v2 presentation keys ------------------------------------------
+    item->icon    = object.value(QStringLiteral("icon")).toString();
+    item->tooltip = object.value(QStringLiteral("tooltip")).toString();
+    item->shape   = object.value(QStringLiteral("shape")).toString().toUpper();
+
+    const QString layout = object.value(QStringLiteral("layout")).toString().toUpper();
+    if (layout == QLatin1String("GRID"))     item->slotLayout = DhRadialItem::Grid;
+    if (layout == QLatin1String("DRAWER"))   item->slotLayout = DhRadialItem::Drawer;
+    if (layout == QLatin1String("DROPDOWN")) item->slotLayout = DhRadialItem::Dropdown;
+    if (layout == QLatin1String("SPROUT"))   item->slotLayout = DhRadialItem::Sprout;
+
+    item->columns    = object.value(QStringLiteral("columns")).toInt(0);
+    item->colSpan    = object.value(QStringLiteral("col_span")).toDouble(1.0);
+    item->cellWidth  = object.value(QStringLiteral("cell_width")).toInt(0);
+    item->cellHeight = object.value(QStringLiteral("cell_height")).toInt(0);
+
+    item->drawerDirection = object.value(QStringLiteral("drawer_direction"))
+                                 .toString(QStringLiteral("AUTO")).toUpper();
+    item->drawerFlow = object.value(QStringLiteral("drawer_flow"))
+                            .toString(QStringLiteral("LINE")).toUpper();
+    item->drawerAlign = object.value(QStringLiteral("drawer_align"))
+                             .toString(QStringLiteral("AUTO")).toUpper();
+
     const QJsonArray children = object.value(QStringLiteral("children")).toArray();
     for (const QJsonValue &value : children) {
         if (!value.isObject()) continue;
@@ -44,7 +68,7 @@ DhRadialItemSP parseItem(const QJsonObject &object)
     return item;
 }
 
-QList<DhRadialItemSP> parseDocument(const QByteArray &json)
+QList<DhRadialItemSP> parseDocument(const QByteArray &json, DhRadialDesign *design = nullptr)
 {
     QList<DhRadialItemSP> result;
 
@@ -53,6 +77,12 @@ QList<DhRadialItemSP> parseDocument(const QByteArray &json)
     if (error.error != QJsonParseError::NoError) {
         warnKrita << "DH radial menu: config is not valid JSON:" << error.errorString();
         return result;
+    }
+
+    // A v1 file has no "design" block at all; the defaults already in
+    // DhRadialDesign are exactly the migration the desktop plugin performs.
+    if (design) {
+        design->read(document.object().value(QStringLiteral("design")).toObject());
     }
 
     const QJsonArray items = document.object().value(QStringLiteral("items")).toArray();
@@ -91,10 +121,31 @@ QList<DhRadialItemSP> builtinFallback()
 
 namespace {
 
+QString layoutToString(DhRadialItem::SlotLayout layout)
+{
+    switch (layout) {
+    case DhRadialItem::Grid:     return QStringLiteral("GRID");
+    case DhRadialItem::Drawer:   return QStringLiteral("DRAWER");
+    case DhRadialItem::Dropdown: return QStringLiteral("DROPDOWN");
+    case DhRadialItem::Sprout:   return QStringLiteral("SPROUT");
+    case DhRadialItem::Submenu:
+    default:                     return QStringLiteral("SUBMENU");
+    }
+}
+
 QJsonObject itemToJson(const DhRadialItemSP &item)
 {
     QJsonObject object;
     if (!item) return object;
+
+    // Start from whatever was in the file so keys this build does not
+    // understand survive a round trip. Every key this build DOES understand
+    // is then overwritten from the live object below, so an edit in the
+    // settings UI is never shadowed by a stale copy left over in `raw`.
+    object = item->raw;
+    object.remove(QStringLiteral("children"));
+    object.remove(QStringLiteral("action"));
+    object.remove(QStringLiteral("color"));
 
     object.insert(QStringLiteral("label"), item->label);
 
@@ -112,6 +163,53 @@ QJsonObject itemToJson(const DhRadialItemSP &item)
         object.insert(QStringLiteral("color"), item->color.name());
     }
 
+    // v2 presentation keys: only written when they differ from the default,
+    // so a config that never touches this stuff stays readable rather than
+    // turning into a wall of "shape": "" on every leaf.
+    if (!item->icon.isEmpty())    object.insert(QStringLiteral("icon"), item->icon);
+    else                          object.remove(QStringLiteral("icon"));
+
+    if (!item->tooltip.isEmpty()) object.insert(QStringLiteral("tooltip"), item->tooltip);
+    else                          object.remove(QStringLiteral("tooltip"));
+
+    if (!item->shape.isEmpty())   object.insert(QStringLiteral("shape"), item->shape);
+    else                          object.remove(QStringLiteral("shape"));
+
+    if (item->isSubmenu() && item->slotLayout != DhRadialItem::Submenu) {
+        object.insert(QStringLiteral("layout"), layoutToString(item->slotLayout));
+    } else {
+        object.remove(QStringLiteral("layout"));
+    }
+
+    if (item->columns > 0)  object.insert(QStringLiteral("columns"), item->columns);
+    else                     object.remove(QStringLiteral("columns"));
+
+    if (!qFuzzyCompare(item->colSpan, 1.0)) object.insert(QStringLiteral("col_span"), item->colSpan);
+    else                                     object.remove(QStringLiteral("col_span"));
+
+    if (item->cellWidth > 0)  object.insert(QStringLiteral("cell_width"), item->cellWidth);
+    else                       object.remove(QStringLiteral("cell_width"));
+    if (item->cellHeight > 0) object.insert(QStringLiteral("cell_height"), item->cellHeight);
+    else                       object.remove(QStringLiteral("cell_height"));
+
+    const bool isPanelChild = item->slotLayout == DhRadialItem::Drawer
+        || item->slotLayout == DhRadialItem::Dropdown;
+    if (isPanelChild && item->drawerDirection != QLatin1String("AUTO")) {
+        object.insert(QStringLiteral("drawer_direction"), item->drawerDirection);
+    } else {
+        object.remove(QStringLiteral("drawer_direction"));
+    }
+    if (isPanelChild && item->drawerFlow != QLatin1String("LINE")) {
+        object.insert(QStringLiteral("drawer_flow"), item->drawerFlow);
+    } else {
+        object.remove(QStringLiteral("drawer_flow"));
+    }
+    if (isPanelChild && item->drawerAlign != QLatin1String("AUTO")) {
+        object.insert(QStringLiteral("drawer_align"), item->drawerAlign);
+    } else {
+        object.remove(QStringLiteral("drawer_align"));
+    }
+
     return object;
 }
 
@@ -123,9 +221,21 @@ QList<DhRadialItemSP> DhRadialConfig::clone(const QList<DhRadialItemSP> &items)
     for (const DhRadialItemSP &item : items) {
         if (!item) continue;
         DhRadialItemSP dup(new DhRadialItem());
+        dup->raw = item->raw;
         dup->label = item->label;
         dup->action = item->action;
         dup->color = item->color;
+        dup->icon = item->icon;
+        dup->tooltip = item->tooltip;
+        dup->shape = item->shape;
+        dup->slotLayout = item->slotLayout;
+        dup->columns = item->columns;
+        dup->colSpan = item->colSpan;
+        dup->cellWidth = item->cellWidth;
+        dup->cellHeight = item->cellHeight;
+        dup->drawerDirection = item->drawerDirection;
+        dup->drawerFlow = item->drawerFlow;
+        dup->drawerAlign = item->drawerAlign;
         dup->children = clone(item->children);
         copy.append(dup);
     }
@@ -143,7 +253,8 @@ QList<DhRadialItemSP> DhRadialConfig::loadDefaults()
     return builtinFallback();
 }
 
-bool DhRadialConfig::save(const QList<DhRadialItemSP> &items, QString *error)
+bool DhRadialConfig::save(const QList<DhRadialItemSP> &items, const DhRadialDesign *design,
+                          QString *error)
 {
     QJsonArray array;
     for (const DhRadialItemSP &item : items) {
@@ -151,8 +262,29 @@ bool DhRadialConfig::save(const QList<DhRadialItemSP> &items, QString *error)
     }
 
     QJsonObject root;
+
+    if (design) {
+        // The editor has a live design to save: write it out in full.
+        QJsonObject block;
+        design->write(block);
+        root.insert(QStringLiteral("design"), block);
+    } else {
+        // No design was handed in: keep whatever is on disk byte-for-byte,
+        // so an items-only save can never quietly drop somebody else's design.
+        QFile existing(userConfigPath());
+        if (existing.open(QIODevice::ReadOnly)) {
+            const QJsonObject previous =
+                QJsonDocument::fromJson(existing.readAll()).object();
+            existing.close();
+            if (previous.contains(QStringLiteral("design"))) {
+                root.insert(QStringLiteral("design"), previous.value(QStringLiteral("design")));
+            }
+        }
+    }
+
+    root.insert(QStringLiteral("version"), 2);
     root.insert(QStringLiteral("_comment"),
-                QStringLiteral("Written by Krita: Settings > Configure Krita > DH Radial Menu."));
+                QStringLiteral("Menu items and design edited in Krita: Settings > Configure Krita > DH Radial Menu."));
     root.insert(QStringLiteral("items"), array);
 
     const QString path = userConfigPath();
@@ -186,7 +318,7 @@ QString DhRadialConfig::userConfigPath()
     return QDir(base).absoluteFilePath(QStringLiteral("dhtools/dh_radial_menu.json"));
 }
 
-QList<DhRadialItemSP> DhRadialConfig::load()
+QList<DhRadialItemSP> DhRadialConfig::load(DhRadialDesign *design)
 {
     const QString userPath = userConfigPath();
 
@@ -211,7 +343,7 @@ QList<DhRadialItemSP> DhRadialConfig::load()
         QFile file(path);
         if (!file.exists() || !file.open(QIODevice::ReadOnly)) continue;
 
-        const QList<DhRadialItemSP> items = parseDocument(file.readAll());
+        const QList<DhRadialItemSP> items = parseDocument(file.readAll(), design);
         file.close();
 
         if (!items.isEmpty()) {

@@ -14,6 +14,8 @@
 #include <QRect>
 #include <QThreadPool>
 #include <QApplication>
+#include <QtMath>
+#include <QGuiApplication>
 #include <QScreen>
 
 #include <Eigen/Core>
@@ -39,6 +41,8 @@
 // Krita/ui
 #include "kis_abstract_perspective_grid.h"
 #include "kis_config.h"
+#include <kconfiggroup.h>
+#include <ksharedconfig.h>
 #include "kis_config_notifier.h"
 #include "kis_image_config.h"
 #include "canvas/kis_canvas2.h"
@@ -300,7 +304,8 @@ bool KisToolFreehand::trySampleByPaintOp(KoPointerEvent *event, AlternateAction 
 
 void KisToolFreehand::activateAlternateAction(AlternateAction action)
 {
-    if (action != ChangeSize && action != ChangeSizeSnap) {
+    if (action != ChangeSize && action != ChangeSizeSnap &&
+        action != AdjustBrush && action != ScrollBrush) {
         KisToolPaint::activateAlternateAction(action);
         return;
     }
@@ -311,7 +316,8 @@ void KisToolFreehand::activateAlternateAction(AlternateAction action)
 
 void KisToolFreehand::deactivateAlternateAction(AlternateAction action)
 {
-    if (action != ChangeSize && action != ChangeSizeSnap) {
+    if (action != ChangeSize && action != ChangeSizeSnap &&
+        action != AdjustBrush && action != ScrollBrush) {
         KisToolPaint::deactivateAlternateAction(action);
         return;
     }
@@ -327,7 +333,8 @@ void KisToolFreehand::beginAlternateAction(KoPointerEvent *event, AlternateActio
         return;
     }
 
-    if (action != ChangeSize && action != ChangeSizeSnap) {
+    if (action != ChangeSize && action != ChangeSizeSnap &&
+        action != AdjustBrush && action != ScrollBrush) {
         KisToolPaint::beginAlternateAction(event, action);
         return;
     }
@@ -338,6 +345,23 @@ void KisToolFreehand::beginAlternateAction(KoPointerEvent *event, AlternateActio
 
     m_lastDocumentPoint = event->point;
     m_lastPaintOpSize = currentPaintOpPreset()->settings()->paintOpSize();
+    m_lastPaintOpacity = canvas()->resourceManager()->resource(KoCanvasResource::Opacity).toReal();
+    m_adjustAxisResolved = false;
+    m_adjustAxisVertical = false;
+
+    {
+        // Brush size gets half the screen width because that is Krita's
+        // established feel for it. Opacity is a 0..1 range, not a 1..1000 one,
+        // so the same distance makes it crawl -- a quarter of the screen is
+        // much closer to how the gesture used to behave.
+        KConfigGroup gestureCfg = KSharedConfig::openConfig()->group("AdjustBrushGesture");
+        m_opacityDragFraction =
+            qBound(0.05, gestureCfg.readEntry("opacityDragFraction", 0.25), 2.0);
+        m_scrollSizePixels =
+            qBound(1.0, gestureCfg.readEntry("scrollSizePixelsPerUnit", 25.0), 500.0);
+        m_scrollOpacityPixels =
+            qBound(0.5, gestureCfg.readEntry("scrollOpacityPixelsPerPercent", 5.0), 500.0);
+    }
 
     m_beginAlternateActionEvent = event->deepCopyEvent();
     requestUpdateOutline(m_initialGestureDocPoint, &m_beginAlternateActionEvent->event);
@@ -347,7 +371,8 @@ void KisToolFreehand::continueAlternateAction(KoPointerEvent *event, AlternateAc
 {
     if (trySampleByPaintOp(event, action) || m_paintopBasedSamplingInAction) return;
 
-    if (action != ChangeSize && action != ChangeSizeSnap) {
+    if (action != ChangeSize && action != ChangeSizeSnap &&
+        action != AdjustBrush && action != ScrollBrush) {
         KisToolPaint::continueAlternateAction(event, action);
         return;
     }
@@ -356,6 +381,75 @@ void KisToolFreehand::continueAlternateAction(KoPointerEvent *event, AlternateAc
     QPointF actualWidgetPosition = convertDocumentToWidget(event->point);
 
     QPointF offset = actualWidgetPosition - lastWidgetPosition;
+
+    if (action == ScrollBrush) {
+        // A 2D tracker rather than an axis-locked drag: horizontal drives size,
+        // vertical drives opacity, and both move at once. This mirrors Shortcut
+        // Composer's "Scroll brush size or opacity", reimplemented natively so
+        // it survives that plugin updating -- and so it exists at all on
+        // Android, where there is no Python to run it.
+        const QPointF total =
+            actualWidgetPosition - convertDocumentToWidget(m_initialGestureDocPoint);
+
+        // Size uses an exponent of 2, so the value is tracked in sqrt space and
+        // squared back. Small brushes crawl, large ones move quickly -- which is
+        // what you want when the range runs from 1px to hundreds.
+        const qreal startInterpolated = qSqrt(qMax(1.0, m_lastPaintOpSize));
+        const qreal interpolated = qMax(1.0, startInterpolated + total.x() / m_scrollSizePixels);
+        const qreal maxBrushSize = KisImageConfig(true).maxBrushSize();
+        const qreal newSize = qBound(0.01, interpolated * interpolated, maxBrushSize);
+        currentPaintOpPreset()->settings()->setPaintOpSize(newSize);
+
+        // Opacity is linear over 10..100%, dragging up for more.
+        const qreal startPercent = m_lastPaintOpacity * 100.0;
+        const qreal percent =
+            qBound(10.0, startPercent - total.y() / m_scrollOpacityPixels, 100.0);
+        canvas()->resourceManager()->setResource(KoCanvasResource::Opacity, percent / 100.0);
+
+        m_showOpacityInOutline = true;
+        requestUpdateOutline(
+            m_initialGestureDocPoint,
+            m_beginAlternateActionEvent.has_value() ? &m_beginAlternateActionEvent->event : nullptr);
+        return;
+    }
+
+    if (action == AdjustBrush) {
+        const QPointF total =
+            actualWidgetPosition - convertDocumentToWidget(m_initialGestureDocPoint);
+
+        // Wait until the drag has clearly gone somewhere before deciding what it
+        // means, so a three-finger tap does not nudge anything.
+        if (!m_adjustAxisResolved) {
+            const qreal deadZone = 12.0;
+            if (qMax(qAbs(total.x()), qAbs(total.y())) < deadZone) return;
+            m_adjustAxisVertical = qAbs(total.y()) >= qAbs(total.x());
+            m_adjustAxisResolved = true;
+        }
+
+        if (!m_adjustAxisVertical) {
+            // Horizontal: opacity. Screen-right means more. Scaled to the screen
+            // so the gesture feels the same on a phone and a 4K tablet.
+            const qreal range = m_opacityDragFraction
+                * QGuiApplication::primaryScreen()->availableVirtualGeometry().width();
+            const qreal opacity = qBound(0.0, m_lastPaintOpacity + total.x() / range, 1.0);
+
+            canvas()->resourceManager()->setResource(KoCanvasResource::Opacity, opacity);
+            m_showOpacityInOutline = true;
+
+            // Repaint the outline so the opacity fill drawn by KisToolPaint
+            // tracks the drag.
+            requestUpdateOutline(
+                m_initialGestureDocPoint,
+                m_beginAlternateActionEvent.has_value() ? &m_beginAlternateActionEvent->event : nullptr);
+            return;
+        }
+
+        // Vertical: size. Feed the vertical delta in where the existing
+        // ChangeSize code expects the horizontal one, negated so dragging up
+        // makes the brush bigger. Identical feel, no duplicated maths.
+        offset = QPointF(-offset.y(), 0.0);
+        m_showOpacityInOutline = false;
+    }
 
     KisCanvas2 *canvas2 = dynamic_cast<KisCanvas2 *>(canvas());
     KIS_SAFE_ASSERT_RECOVER_RETURN(canvas2);
@@ -402,7 +496,8 @@ void KisToolFreehand::endAlternateAction(KoPointerEvent *event, AlternateAction 
         return;
     }
 
-    if (action != ChangeSize && action != ChangeSizeSnap) {
+    if (action != ChangeSize && action != ChangeSizeSnap &&
+        action != AdjustBrush && action != ScrollBrush) {
         KisToolPaint::endAlternateAction(event, action);
         return;
     }
@@ -410,6 +505,8 @@ void KisToolFreehand::endAlternateAction(KoPointerEvent *event, AlternateAction 
     KisToolUtils::setCursorPos(m_initialGestureGlobalPoint);
     requestUpdateOutline(m_initialGestureDocPoint, 0);
 
+    m_adjustAxisResolved = false;
+    m_showOpacityInOutline = false;
     setMode(HOVER_MODE);
 
     m_beginAlternateActionEvent.reset();
