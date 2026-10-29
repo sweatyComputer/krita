@@ -262,7 +262,9 @@ def kritaStripPythonFramework(frameworkPath: pathlib.Path):
     files_for_rm.append(frameworkPath.joinpath('Versions','Current', 'Resources','Python.app'))
 
     for file in files_for_rm:
-        if file.exists(follow_symlinks=False):
+        # TODO: change to `file.exists(follow_symlinks=False)` when
+        # Python 3.12 becomes the minimum version
+        if file.is_symlink() or file.exists():
             if file.is_dir():
                 shutil.rmtree(file, ignore_errors=True)
             else:
@@ -359,7 +361,7 @@ def kritaDeploy(from_install: pathlib.Path, dst: pathlib.Path, source: pathlib.P
         qt_version = 5
 
     print(f"Found qt version: {qt_version}")
-    osx_deployment_target = "12" if qt_version[0] == 6 else "10.15"
+    osx_deployment_target = "13" if qt_version[0] == 6 else "12"
     kisenv['MACOSX_DEPLOYMENT_TARGET'] = osx_deployment_target
     kisenv['QMAKE_MACOSX_DEPLOYMENT_TARGET'] = osx_deployment_target
 

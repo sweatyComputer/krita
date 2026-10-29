@@ -709,6 +709,16 @@ void KisConfig::setEnableCanvasSurfaceColorSpaceManagement(bool value)
     m_cfg.writeEntry("enableCanvasSurfaceColorSpaceManagement", value);
 }
 
+bool KisConfig::effectiveShouldUseNativeSurfaceForCanvas(bool osManagedSurfacePresent) const
+{
+    bool useNativeSurfaceForCanvas = osManagedSurfacePresent && this->enableCanvasSurfaceColorSpaceManagement();
+    if (qEnvironmentVariableIsSet("KRITA_USE_NATIVE_CANVAS_SURFACE")) {
+        useNativeSurfaceForCanvas = qEnvironmentVariableIntValue("KRITA_USE_NATIVE_CANVAS_SURFACE");
+        qDebug() << "FPS-DEBUG: Krita canvas mode is overridden:" << (useNativeSurfaceForCanvas ? "native surface" : "legacy mode") << useNativeSurfaceForCanvas << qEnvironmentVariableIsSet("KRITA_USE_NATIVE_CANVAS_SURFACE");
+    }
+    return useNativeSurfaceForCanvas;
+}
+
 KisConfig::CanvasSurfaceMode KisConfig::canvasSurfaceColorSpaceManagementMode(bool defaultValue) const {
     QString modeStr = defaultValue ? "preferred" : m_cfg.readEntry("canvasSurfaceColorSpaceManagementMode", "preferred");
 
@@ -843,20 +853,8 @@ QString KisConfig::monitorProfile(int screen) const
     return profile;
 }
 
-QString KisConfig::monitorForScreen(int screen, const QString &defaultMonitor, bool defaultValue) const
+void KisConfig::setMonitorProfile(int screen, const QString & monitorProfile) const
 {
-    return (defaultValue ? defaultMonitor
-                         : m_cfg.readEntry(QString("monitor_for_screen_%1").arg(screen), defaultMonitor));
-}
-
-void KisConfig::setMonitorForScreen(int screen, const QString& monitor)
-{
-    m_cfg.writeEntry(QString("monitor_for_screen_%1").arg(screen), monitor);
-}
-
-void KisConfig::setMonitorProfile(int screen, const QString & monitorProfile, bool override) const
-{
-    m_cfg.writeEntry("monitorProfile/OverrideX11", override);
     m_cfg.writeEntry("monitorProfile" + QString(screen == 0 ? "": QString("_%1").arg(screen)), monitorProfile);
     if (!getScreenStringIdentfier(screen).isEmpty()) {
         m_cfg.writeEntry("monitorProfile" + getScreenStringIdentfier(screen), monitorProfile);
@@ -2193,44 +2191,44 @@ void KisConfig::setHidePopups(bool hidePopups)
     m_cfg.writeEntry("hidePopups", hidePopups);
 }
 
-int KisConfig::numDefaultLayers(bool defaultValue) const
+int KisConfig::numDefaultLayers(const QLatin1String &dialogType, bool defaultValue) const
 {
-    return (defaultValue ? 2 : m_cfg.readEntry("NumberOfLayersForNewImage", 2));
+    return (defaultValue ? 2 : m_cfg.readEntry(dialogType + "NumberOfLayersForNewImage", 2));
 }
 
-void KisConfig::setNumDefaultLayers(int num)
+void KisConfig::setNumDefaultLayers(const QLatin1String &dialogType, int num)
 {
-    m_cfg.writeEntry("NumberOfLayersForNewImage", num);
+    m_cfg.writeEntry(dialogType + "NumberOfLayersForNewImage", num);
 }
 
-quint8 KisConfig::defaultBackgroundOpacity(bool defaultValue) const
+quint8 KisConfig::defaultBackgroundOpacity(const QLatin1String &dialogType, bool defaultValue) const
 {
-  return (defaultValue ? (int)OPACITY_OPAQUE_U8 : m_cfg.readEntry("BackgroundOpacityForNewImage", (int)OPACITY_OPAQUE_U8));
+  return (defaultValue ? (int)OPACITY_OPAQUE_U8 : m_cfg.readEntry(dialogType + "BackgroundOpacityForNewImage", (int)OPACITY_OPAQUE_U8));
 }
 
-void KisConfig::setDefaultBackgroundOpacity(quint8 value)
+void KisConfig::setDefaultBackgroundOpacity(const QLatin1String &dialogType, quint8 value)
 {
-  m_cfg.writeEntry("BackgroundOpacityForNewImage", (int)value);
+  m_cfg.writeEntry(dialogType + "BackgroundOpacityForNewImage", (int)value);
 }
 
-QColor KisConfig::defaultBackgroundColor(bool defaultValue) const
+QColor KisConfig::defaultBackgroundColor(const QLatin1String &dialogType, bool defaultValue) const
 {
-  return (defaultValue ? QColor(Qt::white) : m_cfg.readEntry("BackgroundColorForNewImage", QColor(Qt::white)));
+  return (defaultValue ? QColor(Qt::white) : m_cfg.readEntry(dialogType + "BackgroundColorForNewImage", QColor(Qt::white)));
 }
 
-void KisConfig::setDefaultBackgroundColor(const QColor &value)
+void KisConfig::setDefaultBackgroundColor(const QLatin1String &dialogType, const QColor &value)
 {
-  m_cfg.writeEntry("BackgroundColorForNewImage", value);
+  m_cfg.writeEntry(dialogType + "BackgroundColorForNewImage", value);
 }
 
-KisConfig::BackgroundStyle KisConfig::defaultBackgroundStyle(bool defaultValue) const
+KisConfig::BackgroundStyle KisConfig::defaultBackgroundStyle(const QLatin1String &dialogType, bool defaultValue) const
 {
-  return (KisConfig::BackgroundStyle)(defaultValue ? RASTER_LAYER : m_cfg.readEntry("BackgroundStyleForNewImage", (int)RASTER_LAYER));
+  return (KisConfig::BackgroundStyle)(defaultValue ? RASTER_LAYER : m_cfg.readEntry(dialogType + "BackgroundStyleForNewImage", (int)RASTER_LAYER));
 }
 
-void KisConfig::setDefaultBackgroundStyle(KisConfig::BackgroundStyle value)
+void KisConfig::setDefaultBackgroundStyle(const QLatin1String &dialogType, KisConfig::BackgroundStyle value)
 {
-  m_cfg.writeEntry("BackgroundStyleForNewImage", (int)value);
+  m_cfg.writeEntry(dialogType + "BackgroundStyleForNewImage", (int)value);
 }
 
 int KisConfig::lineSmoothingType(bool defaultValue) const

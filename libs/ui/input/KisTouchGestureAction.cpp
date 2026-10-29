@@ -34,6 +34,7 @@ KisTouchGestureAction::KisTouchGestureAction()
     shortcuts.insert(i18n("Activate Move Tool"), KisToolMove);
     shortcuts.insert(i18n("Activate Transform Tool"), KisToolTransform);
     shortcuts.insert(i18n("Radial Menu"), ShowRadialMenu);
+    shortcuts.insert(i18n("Mirror View"), MirrorView);
     setShortcutIndexes(shortcuts);
 }
 
@@ -98,6 +99,9 @@ void KisTouchGestureAction::end(QEvent *event)
         // Provided by the dhtools plugin. The lookup below already handles a
         // missing action gracefully, so this is harmless without it.
         actionName = QStringLiteral("dh_show_radial_menu");
+        break;
+    case MirrorView:
+        actionName = QStringLiteral("mirror_canvas");
         break;
     }
 

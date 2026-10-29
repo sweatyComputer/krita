@@ -5,6 +5,7 @@
  */
 
 #include "recorder_export.h"
+#include "recorder_export_preprocessor.h"
 #include "ui_recorder_export.h"
 #include "recorder_export_config.h"
 #include "recorder_export_settings.h"
@@ -67,6 +68,7 @@ public:
     QScopedPointer<Ui::RecorderExport> ui;
     RecorderExportSettings *settings;
 
+    QScopedPointer<RecorderExportPreprocessor> preprocessor;
     QScopedPointer<Exporter> exporter;
     RecorderDirectoryCleaner *cleaner = nullptr;
 
@@ -79,6 +81,7 @@ public:
         : q(q_ptr)
         , ui(new Ui::RecorderExport)
         , settings(q_ptr->settings)
+        , preprocessor(new RecorderExportPreprocessor(settings->inputDirectory, settings->format))
     {
     }
 
@@ -284,6 +287,10 @@ public:
         Q_ASSERT(exporter == nullptr);
 
 #ifndef Q_OS_ANDROID
+        // The android export system is robust enough to not need this
+        preprocessor->updateSettings(settings->inputDirectory, settings->format);
+        preprocessor->doPreprocessing();
+
         // We don't do this again on Android, it's mind-bogglingly slow.
         updateFrameInfo();
 #endif
@@ -550,7 +557,7 @@ void RecorderExport::setup()
                                         .arg(settings->imageSize.height())
                                         .arg(i18nc("Pixel dimension suffix", "px"))
                                         .arg(settings->framesCount)
-                                        .arg(i18nc("The suffix after number of frames", "frame(s)"))
+                                        .arg(i18ncp("The suffix after number of frames", "frame", "frames", settings->framesCount))
                                        );
     }
 

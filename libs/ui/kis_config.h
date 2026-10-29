@@ -187,6 +187,14 @@ public:
     bool enableCanvasSurfaceColorSpaceManagement(bool defaultValue = false) const;
     void setEnableCanvasSurfaceColorSpaceManagement(bool value);
 
+    /**
+     * \return if a native surface should be used for the canvas
+     *
+     * The function encodes the logic of checking user config and environment
+     * variable for calculating the option for the native canvas surface
+     */
+    bool effectiveShouldUseNativeSurfaceForCanvas(bool osManagedSurfacePresent) const;
+
     enum class CanvasSurfaceMode {
         Preferred = 0,
         Rec709g22,
@@ -219,10 +227,7 @@ public:
 
     /// get the profile the user has selected for the given screen
     QString monitorProfile(int screen) const;
-    void setMonitorProfile(int screen, const QString & monitorProfile, bool override) const;
-
-    QString monitorForScreen(int screen, const QString &defaultMonitor, bool defaultValue = true) const;
-    void setMonitorForScreen(int screen, const QString& monitor);
+    void setMonitorProfile(int screen, const QString & monitorProfile) const;
 
     /// Get the actual profile to be used for the given screen, which is
     /// either the screen profile set by the color management system or
@@ -586,14 +591,14 @@ public:
     bool hidePopups(bool defaultValue = false) const;
     void setHidePopups(bool hidePopups);
 
-    int numDefaultLayers(bool defaultValue = false) const;
-    void setNumDefaultLayers(int num);
+    int numDefaultLayers(const QLatin1String &dialogType, bool defaultValue = false) const;
+    void setNumDefaultLayers(const QLatin1String &dialogType, int num);
 
-    quint8 defaultBackgroundOpacity(bool defaultValue = false) const;
-    void setDefaultBackgroundOpacity(quint8 value);
+    quint8 defaultBackgroundOpacity(const QLatin1String &dialogType, bool defaultValue = false) const;
+    void setDefaultBackgroundOpacity(const QLatin1String &dialogType, quint8 value);
 
-    QColor defaultBackgroundColor(bool defaultValue = false) const;
-    void setDefaultBackgroundColor(const QColor &value);
+    QColor defaultBackgroundColor(const QLatin1String &dialogType, bool defaultValue = false) const;
+    void setDefaultBackgroundColor(const QLatin1String &dialogType, const QColor &value);
 
     enum BackgroundStyle {
         RASTER_LAYER = 0,
@@ -601,8 +606,8 @@ public:
         FILL_LAYER = 2
     };
 
-    BackgroundStyle defaultBackgroundStyle(bool defaultValue = false) const;
-    void setDefaultBackgroundStyle(BackgroundStyle value);
+    BackgroundStyle defaultBackgroundStyle(const QLatin1String &dialogType, bool defaultValue = false) const;
+    void setDefaultBackgroundStyle(const QLatin1String &dialogType, BackgroundStyle value);
 
     int lineSmoothingType(bool defaultValue = false) const;
     void setLineSmoothingType(int value);

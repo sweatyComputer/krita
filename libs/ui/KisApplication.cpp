@@ -249,13 +249,9 @@ KisApplication::KisApplication(const QString &key, int &argc, char **argv)
     QString defaultStyle = style()->objectName().toLower();
     if (!widgetStyleFromConfig.isEmpty()) {
         qApp->setStyle(widgetStyleFromConfig);
-#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
-    } else if (defaultStyle == "macintosh" || defaultStyle == "windowsvista") {
-         // default to Fusion instead of styles that use native theming
-        qApp->setStyle("fusion");
     }
-#else
-    } else if (style()->objectName().toLower() == "macos" || defaultStyle == "windowsvista") {
+#if defined Q_OS_WIN || defined Q_OS_MACOS || defined Q_OS_ANDROID
+    else {
         // default to Fusion instead of styles that use native theming
         qApp->setStyle("fusion");
     }
@@ -841,13 +837,6 @@ bool KisApplication::start(const KisApplicationArguments &args)
                                 i18n("Cannot add the file layer: no document is open.\n"
                                      "You can either create a new file using the --new-image option, or you can open an existing file."));
         }
-    }
-
-    // fixes BUG:369308  - Krita crashing on splash screen when loading.
-    // trying to open a file before Krita has loaded can cause it to hang and crash
-    if (d->splashScreen) {
-        d->splashScreen->displayLinks(true);
-        d->splashScreen->displayRecentFiles(true);
     }
 
     Q_FOREACH(const QByteArray &message, d->earlyRemoteArguments) {
