@@ -132,7 +132,22 @@ private:
     void paintHub(QPainter &painter);
     QIcon iconFor(const DhRadialItemSP &item) const;
 
-    QColor restingFill(const DhRadialItemSP &item, int index) const;
+    QColor restingFill(const DhRadialItemSP &item, int index,
+                       const DhRadialItemSP &parent = DhRadialItemSP()) const;
+
+    /**
+     * The colour an item contributes to its own fill.
+     *
+     * A child drawn inline (grid, drawer, dropdown, sprout) with no colour of
+     * its own inherits its parent's, so the group reads as one block. Only
+     * when neither has a colour do we fall back to the palette - otherwise a
+     * parent with an explicit colour would sprout children tinted by whatever
+     * the palette happens to hold at the parent's slot index, which is a
+     * colour belonging to nothing on screen.
+     */
+    QColor tintFor(const DhRadialItemSP &item, int index,
+                   const DhRadialItemSP &parent) const;
+
     QColor paletteColour(int index) const;
     QString centreLabel() const;
 

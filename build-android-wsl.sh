@@ -18,6 +18,8 @@
 #   ./build-android-wsl.sh --refresh-deps
 #   ./build-android-wsl.sh --setup-only # just get the toolchain in place
 #   ./build-android-wsl.sh --env        # dump the environment and exit
+#   ./build-android-wsl.sh --gmic       # also build the G'MIC-Qt filters plugin
+#                                       # (first time ~20-40 min; then only on change)
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -70,6 +72,9 @@ DO_CLEAN=0
 REFRESH_DEPS=0
 SETUP_ONLY=0
 DUMP_ENV=0
+BUILD_GMIC="${BUILD_GMIC:-0}"
+# gmic.cpp alone wants several GB of RAM to compile; keep this low
+GMIC_JOBS="${GMIC_JOBS:-6}"
 
 for arg in "$@"; do
     case "$arg" in
@@ -78,6 +83,7 @@ for arg in "$@"; do
         --refresh-deps)  REFRESH_DEPS=1 ;;
         --setup-only)    SETUP_ONLY=1 ;;
         --env)           DUMP_ENV=1 ;;
+        --gmic)          BUILD_GMIC=1 ;;
         -h|--help)       sed -n '2,30p' "$0"; exit 0 ;;
         *) echo "Unknown option: $arg (try --help)" >&2; exit 1 ;;
     esac
@@ -478,6 +484,149 @@ do_install() {
     ok "installed"
 }
 
+
+# ---------------------------------------------------------------------------
+# G'MIC-Qt (DH-GMIC)
+#
+# Krita's own G'MIC host (the Filter > Start G'MIC-Qt menu and
+# libkritaqmicinterface) is already part of the Android build. What KDE's CI
+# skips on Android is the gmic-qt plugin itself (build-plugins.py exits early).
+# This builds it from Krita's own 3rdparty_plugins/ext_gmic recipe against the
+# Krita we just installed, and drops krita_gmic_qt.so into _install/lib, where
+# Gradle picks it up and renames it lib_krita_gmic_qt.so - the name Krita's
+# plugin loader looks for on Android.
+# ---------------------------------------------------------------------------
+build_gmic() {
+    step "Building the G'MIC-Qt plugin for Android ($GMIC_JOBS jobs)"
+
+    local install="$WD/krita/_install"
+    local cache="$WD/krita/_build/CMakeCache.txt"
+    [ -f "$cache" ] || die "Krita has not been configured yet ($cache missing). Run a normal build first."
+    # Krita's G'MIC host library. On Android it may carry an ABI suffix
+    # (libkritaqmicinterface_arm64-v8a.so), so look rather than assume.
+    local qmiclib qmicinc
+    qmiclib="$(find "$install/lib" "$WD/krita/_build" -maxdepth 4 -name 'libkritaqmicinterface*.so' 2>/dev/null | head -1)"
+    qmicinc="$(find "$install/include" "$WD/krita/_build" -maxdepth 4 -name 'kis_qmic_plugin_interface.h' -printf '%h\n' 2>/dev/null | head -1)"
+    if [ -z "$qmiclib" ] || [ -z "$qmicinc" ]; then
+        echo "  library: ${qmiclib:-NOT FOUND}"
+        echo "  header:  ${qmicinc:-NOT FOUND}"
+        echo "  anything qmic-related that did get built:"
+        find "$install" "$WD/krita/_build" -iname '*qmic*' 2>/dev/null | head -20 | sed 's/^/    /'
+        die "Krita's G'MIC host (kritaqmicinterface) is missing - send Claude the list above."
+    fi
+    ok "host library: $qmiclib"
+    ok "host headers: $qmicinc"
+
+    getc() { grep -m1 "^$1:" "$cache" | cut -d= -f2- || true; }
+
+    # Build the plugin with exactly the settings Krita was built with.
+    local platform stl findroot
+    platform="$(getc ANDROID_PLATFORM)"
+    if [ -z "$platform" ]; then
+        local api; api="$(getc ANDROID_NATIVE_API_LEVEL)"
+        [ -z "$api" ] && api="$(getc ANDROID_API_LEVEL)"
+        platform="android-${api:-23}"
+    fi
+    stl="$(getc ANDROID_STL)"; stl="${stl:-c++_shared}"
+    findroot="$(getc CMAKE_FIND_ROOT_PATH)"
+    findroot="${findroot:+$findroot;}$install"
+    ok "platform $platform, stl $stl"
+
+    # gmic-qt insists on Qt's translation tool. Use the Android Qt's if it has
+    # one, otherwise the host's (it only runs at build time).
+    local linguist=""
+    if [ ! -d "$install/lib/cmake/Qt5LinguistTools" ]; then
+        if [ ! -f /usr/lib/x86_64-linux-gnu/cmake/Qt5LinguistTools/Qt5LinguistToolsConfig.cmake ]; then
+            step "Installing Qt's translation tools for the host (sudo)"
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                qttools5-dev qttools5-dev-tools > /dev/null
+        fi
+        linguist="-DQt5LinguistTools_DIR=/usr/lib/x86_64-linux-gnu/cmake/Qt5LinguistTools"
+        ok "using host lrelease"
+    fi
+
+    # FFTW speeds up some filters; only use it if the deps bundle ships it.
+    local fftw=OFF
+    if ls "$install"/lib/libfftw3*.so "$install"/lib/libfftw3*.a > /dev/null 2>&1; then fftw=ON; fi
+    ok "FFTW3: $fftw"
+
+    # Extra arguments handed straight to gmic-qt's own CMake.
+    local extra="-DCMAKE_BUILD_TYPE=Release;-DENABLE_CURL=OFF;-DENABLE_ASAN=OFF;-DENABLE_FFTW3=$fftw"
+    extra="$extra;-DANDROID_STL=$stl;-DCMAKE_PREFIX_PATH=$install"
+    extra="$extra;-DKIS_IMAGE_INTERFACE_LIBRARY=$qmiclib;-DKIS_IMAGE_INTERFACE_DIR=$qmicinc"
+    # Android's pthread.h has no _PTHREAD_H include guard (bionic uses #pragma
+    # once), so CImg concludes pthreads are absent: it then compiles its mutexes
+    # out and calls syscall(SYS_gettid), which bionic doesn't declare. Tell it
+    # the truth - pthreads are there and already included by gmic.h.
+    extra="$extra;-DCMAKE_CXX_FLAGS=-D_PTHREAD_H"
+    if [ -n "$linguist" ]; then extra="$extra;$linguist"; fi
+
+    local build="$WORK/gmic-build"
+    mkdir -p "$build" "$WORK/downloads"
+
+    # gmic-qt's configure step makes its translation .qm files by calling
+    # `lrelease` straight off PATH (not the Qt tool CMake found). Ubuntu keeps
+    # it in /usr/lib/qt5/bin, which is not on PATH, so put it there for this step.
+    local lrel=""
+    for c in /usr/lib/qt5/bin/lrelease /usr/lib/x86_64-linux-gnu/qt5/bin/lrelease "$(command -v lrelease-qt5 || true)" "$(command -v lrelease || true)"; do
+        if [ -n "$c" ] && [ -x "$c" ]; then lrel="$c"; break; fi
+    done
+    if [ -z "$lrel" ]; then
+        step "Installing Qt's lrelease for the host (sudo)"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qttools5-dev-tools > /dev/null
+        for c in /usr/lib/qt5/bin/lrelease /usr/lib/x86_64-linux-gnu/qt5/bin/lrelease; do
+            if [ -x "$c" ]; then lrel="$c"; break; fi
+        done
+    fi
+    [ -n "$lrel" ] || die "Could not find or install lrelease (package qttools5-dev-tools)."
+    export PATH="$(dirname "$lrel"):$PATH"
+    ok "lrelease: $lrel"
+
+    # A configure that ran without lrelease leaves no .qm files behind and is
+    # never re-run by itself - force it.
+    local gsrc="$build/ext_gmic/ext_gmic-prefix/src/ext_gmic/gmic-qt"
+    if [ -d "$gsrc" ] && [ ! -f "$gsrc/translations/filters/ru.qm" ]; then
+        rm -f "$build/ext_gmic/ext_gmic-prefix/src/ext_gmic-stamp/ext_gmic-configure"
+        ok "re-running G'MIC configure (translations were missing)"
+    fi
+
+    # -static-openmp: the NDK would otherwise link libomp.so, which is not in
+    # the APK, and the plugin would silently fail to load on the tablet.
+    ( cd "$build" && cmake -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE" \
+        -DANDROID_ABI="$ABI" \
+        -DANDROID_PLATFORM="$platform" \
+        -DANDROID_STL="$stl" \
+        -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
+        -DCMAKE_FIND_ROOT_PATH="$findroot" \
+        -DCMAKE_PREFIX_PATH="$install" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-static-openmp" \
+        -DCMAKE_MODULE_LINKER_FLAGS="-static-openmp" \
+        -DINSTALL_ROOT="$install" \
+        -DEXTERNALS_DOWNLOAD_DIR="$WORK/downloads" \
+        -DEXT_GMIC_EXTRA_ARGS="$extra" \
+        "$KRITA_SRC/3rdparty_plugins" ) 2>&1 | tee "$WORK/build-gmic.log"
+    [ "${PIPESTATUS[0]}" = 0 ] || die "G'MIC configure failed - see $WORK/build-gmic.log"
+
+    ( cd "$build" && CMAKE_BUILD_PARALLEL_LEVEL="$GMIC_JOBS" \
+        cmake --build . --target ext_gmic --parallel "$GMIC_JOBS" ) 2>&1 | tee -a "$WORK/build-gmic.log"
+    [ "${PIPESTATUS[0]}" = 0 ] || die "G'MIC build failed - see $WORK/build-gmic.log
+    (inner logs: $build/ext_gmic-prefix/src/ext_gmic-stamp/*.log)"
+
+    # Qt5 on Android names modules with an ABI suffix (krita_gmic_qt_arm64-v8a.so),
+    # same as Krita's own plugins; Gradle renames both to lib_krita*.so.
+    local gso
+    gso="$(ls "$install"/lib/krita_gmic_qt*.so 2>/dev/null | head -1)"
+    [ -n "$gso" ] || \
+        die "G'MIC built but no krita_gmic_qt*.so in $install/lib - see $WORK/build-gmic.log"
+
+    if readelf -d "$gso" | grep -q 'libomp.so'; then
+        die "$(basename "$gso") still needs libomp.so, so it would not load on Android.
+    -static-openmp did not take effect - send Claude $WORK/build-gmic.log"
+    fi
+    ok "$(basename "$gso") ($(du -h "$gso" | cut -f1)) is in place, no libomp.so dependency"
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -523,6 +672,7 @@ fi
 print_env
 check_stale_build_dir
 run_build
+if [ "$BUILD_GMIC" = 1 ]; then build_gmic; fi
 fix_line_endings
 run_package
 

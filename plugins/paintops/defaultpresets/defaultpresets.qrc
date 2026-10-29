@@ -22,6 +22,7 @@
         <file>hatchingbrush.kpp</file>
         <file>tangentnormal.kpp</file>
         <file>roundmarker.kpp</file>
+        <file>dhwetpaint.kpp</file> <!-- DH-PIGMENT -->
         <file>mypaintbrush.myb</file>
     </qresource>
 </RCC>

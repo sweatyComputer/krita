@@ -13,6 +13,7 @@ add_subdirectory( gridbrush )
 add_subdirectory( hatching)
 add_subdirectory( sketch )
 add_subdirectory( colorsmudge )
+add_subdirectory( dhwetpaint ) # DH-PIGMENT
 add_subdirectory( roundmarker )
 add_subdirectory( tangentnormal )
 

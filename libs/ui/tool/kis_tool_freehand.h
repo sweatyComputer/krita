@@ -139,6 +139,28 @@ private:
     qreal m_scrollOpacityPixels {5.0};
     QPoint m_initialGestureGlobalPoint;
 
+    // Where the AdjustBrush size/opacity indicator is drawn. On a touch
+    // screen the gesture's own position is under the hand, which hides the
+    // very thing the gesture exists to show. Read from kritarc
+    // [AdjustBrushGesture] at gesture start:
+    //   indicatorAnchor    = above (default) | centre | touch
+    //   indicatorClearance = gap in widget px between the touch point and the
+    //                        bottom of the circle, for "above" (default 90)
+    enum IndicatorAnchor { AnchorTouch, AnchorAbove, AnchorCentre };
+    IndicatorAnchor m_indicatorAnchor {AnchorAbove};
+    qreal m_indicatorClearance {90.0};
+    AlternateAction m_gestureAction {NONE};
+
+    // Once "above" runs out of room and falls back to the canvas centre, it
+    // stays there for the rest of the gesture. Without this, a brush resized
+    // right at the boundary would flick between the two spots every frame.
+    bool m_indicatorFellBack {false};
+
+    /// The document point to draw the outline at for the running gesture.
+    /// Anything other than AdjustBrush keeps the original behaviour, so the
+    /// desktop Shift+drag resize still draws at the cursor.
+    QPointF gestureOutlineDocPoint();
+
     bool m_paintopBasedSamplingInAction {false};
     KisSignalCompressorWithParam<qreal> m_brushResizeCompressor;
 

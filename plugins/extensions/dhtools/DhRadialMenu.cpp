@@ -641,7 +641,16 @@ int DhRadialMenu::cellAt(const QPointF &pos) const
 // Painting
 // ---------------------------------------------------------------------------
 
-QColor DhRadialMenu::restingFill(const DhRadialItemSP &item, int index) const
+QColor DhRadialMenu::tintFor(const DhRadialItemSP &item, int index,
+                             const DhRadialItemSP &parent) const
+{
+    if (item && item->color.isValid())     return item->color;
+    if (parent && parent->color.isValid()) return parent->color;
+    return paletteColour(index);
+}
+
+QColor DhRadialMenu::restingFill(const DhRadialItemSP &item, int index,
+                                 const DhRadialItemSP &parent) const
 {
     QColor base = m_design.buttonColor;
     if (m_design.tintStrength <= 0.0) return base;
@@ -650,7 +659,7 @@ QColor DhRadialMenu::restingFill(const DhRadialItemSP &item, int index) const
     // a colourful config still reads as one coherent menu instead of a bag of
     // sweets. tint_strength 0 ignores item colours, 1 makes the button BE the
     // item colour.
-    const QColor tint = (item && item->color.isValid()) ? item->color : paletteColour(index);
+    const QColor tint = tintFor(item, index, parent);
     const qreal t = m_design.tintStrength;
 
     QColor out(
@@ -739,7 +748,13 @@ void DhRadialMenu::paintCell(QPainter &painter, const Cell &cell, bool hovered)
 
     if (hovered) paintGlow(painter, path);
 
-    painter.setBrush(hovered ? m_design.buttonHoverColor : restingFill(item, cell.slot));
+    // A cell with child >= 0 is drawn inline under its parent, so it inherits
+    // the parent's colour when it has none of its own.
+    const DhRadialItemSP cellParent =
+        (cell.child >= 0) ? currentItems().value(cell.slot) : DhRadialItemSP();
+
+    painter.setBrush(hovered ? m_design.buttonHoverColor
+                             : restingFill(item, cell.slot, cellParent));
     painter.setPen(QPen(hovered ? m_design.borderHoverColor : m_design.borderColor,
                         m_design.borderWidth * scale));
     painter.drawPath(path);

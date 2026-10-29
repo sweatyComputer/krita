@@ -71,6 +71,7 @@ const QString COMPOSITE_HARD_MIX_SOFTER_PHOTOSHOP = "hard_mix_softer_photoshop";
 const QString COMPOSITE_OVERLAY       = "overlay";
 const QString COMPOSITE_BEHIND        = "behind";
 const QString COMPOSITE_GREATER       = "greater";
+const QString COMPOSITE_PIGMENT       = "pigment"; // DH-PIGMENT: Kubelka-Munk paint mixing
 const QString COMPOSITE_HARD_OVERLAY  = "hard overlay";
 const QString COMPOSITE_HARD_OVERLAY_HDR  = "hard_overlay_hdr";
 const QString COMPOSITE_INTERPOLATION = "interpolation";

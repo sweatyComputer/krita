@@ -361,10 +361,21 @@ void KisToolFreehand::beginAlternateAction(KoPointerEvent *event, AlternateActio
             qBound(1.0, gestureCfg.readEntry("scrollSizePixelsPerUnit", 25.0), 500.0);
         m_scrollOpacityPixels =
             qBound(0.5, gestureCfg.readEntry("scrollOpacityPixelsPerPercent", 5.0), 500.0);
+
+        const QString anchor =
+            gestureCfg.readEntry("indicatorAnchor", QStringLiteral("above")).toLower();
+        m_indicatorAnchor = anchor == QLatin1String("touch")  ? AnchorTouch
+                          : (anchor == QLatin1String("centre") ||
+                             anchor == QLatin1String("center")) ? AnchorCentre
+                          : AnchorAbove;
+        m_indicatorClearance =
+            qBound(0.0, gestureCfg.readEntry("indicatorClearance", 90.0), 1000.0);
     }
 
+    m_gestureAction = action;
+    m_indicatorFellBack = false;
     m_beginAlternateActionEvent = event->deepCopyEvent();
-    requestUpdateOutline(m_initialGestureDocPoint, &m_beginAlternateActionEvent->event);
+    requestUpdateOutline(gestureOutlineDocPoint(), &m_beginAlternateActionEvent->event);
 }
 
 void KisToolFreehand::continueAlternateAction(KoPointerEvent *event, AlternateAction action)
@@ -408,7 +419,7 @@ void KisToolFreehand::continueAlternateAction(KoPointerEvent *event, AlternateAc
 
         m_showOpacityInOutline = true;
         requestUpdateOutline(
-            m_initialGestureDocPoint,
+            gestureOutlineDocPoint(),
             m_beginAlternateActionEvent.has_value() ? &m_beginAlternateActionEvent->event : nullptr);
         return;
     }
@@ -439,7 +450,7 @@ void KisToolFreehand::continueAlternateAction(KoPointerEvent *event, AlternateAc
             // Repaint the outline so the opacity fill drawn by KisToolPaint
             // tracks the drag.
             requestUpdateOutline(
-                m_initialGestureDocPoint,
+                gestureOutlineDocPoint(),
                 m_beginAlternateActionEvent.has_value() ? &m_beginAlternateActionEvent->event : nullptr);
             return;
         }
@@ -480,7 +491,7 @@ void KisToolFreehand::continueAlternateAction(KoPointerEvent *event, AlternateAc
         settings->setPaintOpSize(newSize);
 
         requestUpdateOutline(
-            m_initialGestureDocPoint,
+            gestureOutlineDocPoint(),
             m_beginAlternateActionEvent.has_value() ? &m_beginAlternateActionEvent->event : nullptr);
         //m_brushResizeCompressor.start(newSize);
 
@@ -507,9 +518,60 @@ void KisToolFreehand::endAlternateAction(KoPointerEvent *event, AlternateAction 
 
     m_adjustAxisResolved = false;
     m_showOpacityInOutline = false;
+    m_gestureAction = NONE;
+    m_indicatorFellBack = false;
     setMode(HOVER_MODE);
 
     m_beginAlternateActionEvent.reset();
+}
+
+QPointF KisToolFreehand::gestureOutlineDocPoint()
+{
+    if (m_gestureAction != AdjustBrush || m_indicatorAnchor == AnchorTouch) {
+        return m_initialGestureDocPoint;
+    }
+
+    KisCanvas2 *canvas2 = dynamic_cast<KisCanvas2 *>(canvas());
+    if (!canvas2) return m_initialGestureDocPoint;
+    const KisCoordinatesConverter *converter = canvas2->coordinatesConverter();
+
+    // Everything below is in canvas-widget pixels, so "above" means up the
+    // screen even when the canvas itself is rotated or mirrored.
+    const QSizeF widgetSize = converter->getCanvasWidgetSize();
+    const QPointF widgetCentre(widgetSize.width() / 2.0, widgetSize.height() / 2.0);
+
+    if (m_indicatorAnchor == AnchorCentre || m_indicatorFellBack) {
+        return converter->widgetToDocument(widgetCentre);
+    }
+
+    // AnchorAbove: rest the circle's BOTTOM edge a fixed gap above the touch
+    // point. As the brush grows the circle extends upward, away from the
+    // hand, instead of spreading back down over the fingers.
+    qreal scaleX = 1.0;
+    qreal scaleY = 1.0;
+    converter->imageScale(&scaleX, &scaleY);
+    const qreal radius = 0.5 * currentPaintOpPreset()->settings()->paintOpSize() * scaleX;
+
+    const QPointF touch = converter->documentToWidget(m_initialGestureDocPoint);
+    QPointF centre(touch.x(), touch.y() - m_indicatorClearance - radius);
+
+    // No room above - gesture near the top edge, or a brush bigger than the
+    // space left. The canvas centre is the one spot guaranteed to fit and
+    // unlikely to be under the hand.
+    const qreal margin = 8.0;
+    if (centre.y() - radius < margin) {
+        m_indicatorFellBack = true;
+        return converter->widgetToDocument(widgetCentre);
+    }
+
+    // Keep it on-screen sideways, e.g. a gesture started at the very edge.
+    if (2.0 * (radius + margin) <= widgetSize.width()) {
+        centre.setX(qBound(radius + margin, centre.x(), widgetSize.width() - radius - margin));
+    } else {
+        centre.setX(widgetCentre.x());
+    }
+
+    return converter->widgetToDocument(centre);
 }
 
 bool KisToolFreehand::wantsAutoScroll() const

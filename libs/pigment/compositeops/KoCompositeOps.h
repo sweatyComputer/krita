@@ -26,6 +26,7 @@
 #include "compositeops/KoCompositeOpDestinationIn.h"
 #include "compositeops/KoCompositeOpDestinationAtop.h"
 #include "compositeops/KoCompositeOpGreater.h"
+#include "compositeops/KoCompositeOpPigment.h" // DH-PIGMENT
 #include "compositeops/KoCompositeOpMarker.h"
 #include "compositeops/KoAlphaDarkenParamsWrapper.h"
 #include "compositeops/KoColorSpaceBlendingPolicy.h"
@@ -325,6 +326,9 @@ struct AddRGBOps<Traits, true>
     }
 
     static void add(KoColorSpace* cs) {
+
+        // DH-PIGMENT: paint-like (Kubelka-Munk) mixing
+        cs->addCompositeOp(new KoCompositeOpPigment<Traits>(cs));
 
         cs->addCompositeOp(new KoCompositeOpCopyChannel<Traits,red_pos  >(cs, COMPOSITE_COPY_RED  , KoCompositeOp::categoryMisc()));
         cs->addCompositeOp(new KoCompositeOpCopyChannel<Traits,green_pos>(cs, COMPOSITE_COPY_GREEN, KoCompositeOp::categoryMisc()));

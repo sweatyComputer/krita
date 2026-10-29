@@ -1,0 +1,9 @@
+{
+    "Id": "DH Wet Paint Brush",
+    "Type": "Service",
+    "X-KDE-Library": "kritadhwetpaintop",
+    "X-KDE-ServiceTypes": [
+        "Krita/Paintop"
+    ],
+    "X-Krita-Version": "28"
+}
