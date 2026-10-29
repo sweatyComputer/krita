@@ -620,11 +620,32 @@ build_gmic() {
     [ -n "$gso" ] || \
         die "G'MIC built but no krita_gmic_qt*.so in $install/lib - see $WORK/build-gmic.log"
 
-    if readelf -d "$gso" | grep -q 'libomp.so'; then
-        die "$(basename "$gso") still needs libomp.so, so it would not load on Android.
-    -static-openmp did not take effect - send Claude $WORK/build-gmic.log"
-    fi
-    ok "$(basename "$gso") ($(du -h "$gso" | cut -f1)) is in place, no libomp.so dependency"
+    ok "$(basename "$gso") ($(du -h "$gso" | cut -f1)) is in place"
+}
+
+# ---------------------------------------------------------------------------
+# DH-GMIC: gmic-qt links OpenMP by absolute path, so -static-openmp does not
+# stick and the plugin needs libomp.so at runtime. Without it the plugin fails
+# to load on the tablet and Krita greys out the G'MIC menu items. Ship the
+# NDK's libomp.so next to it (Gradle copies everything in _install/lib).
+# Runs on every build, so a G'MIC plugin left over from an earlier --gmic run
+# is covered too.
+bundle_libomp() {
+    local lib="$WD/krita/_install/lib" gso arch omp
+    gso="$(ls "$lib"/krita_gmic_qt*.so 2>/dev/null | head -1)"
+    [ -n "$gso" ] || return 0
+    readelf -d "$gso" | grep -q 'libomp.so' || return 0
+    [ -f "$lib/libomp.so" ] && { ok "libomp.so already bundled for G'MIC"; return 0; }
+    case "$ABI" in
+        arm64-v8a)   arch=aarch64 ;;
+        armeabi-v7a) arch=arm ;;
+        x86_64)      arch=x86_64 ;;
+        *)           arch="$ABI" ;;
+    esac
+    omp="$(find "$SDK/ndk/$NDK_VERSION/toolchains/llvm/prebuilt" -path "*/lib/linux/$arch/libomp.so" 2>/dev/null | head -1)"
+    [ -n "$omp" ] || die "G'MIC needs libomp.so but it isn't in NDK $NDK_VERSION ($arch)."
+    cp -f "$omp" "$lib/libomp.so"
+    ok "bundled libomp.so for G'MIC ($omp)"
 }
 
 # ---------------------------------------------------------------------------
@@ -673,6 +694,7 @@ print_env
 check_stale_build_dir
 run_build
 if [ "$BUILD_GMIC" = 1 ]; then build_gmic; fi
+bundle_libomp
 fix_line_endings
 run_package
 
