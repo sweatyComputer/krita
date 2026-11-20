@@ -1,0 +1,9 @@
+{
+    "Id": "DH Comfy Docker",
+    "Type": "Service",
+    "X-KDE-Library": "kritadhcomfy",
+    "X-KDE-ServiceTypes": [
+        "Krita/Dock"
+    ],
+    "X-Krita-Version": "28"
+}

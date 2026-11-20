@@ -31,4 +31,5 @@ add_subdirectory(snapshotdocker)
 add_subdirectory(storyboarddocker)
 add_subdirectory(widegamutcolorselector)
 add_subdirectory(brushhud)
+add_subdirectory(dhcomfy) # DH-COMFY
 add_subdirectory(textproperties)
