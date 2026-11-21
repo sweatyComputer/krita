@@ -3,6 +3,7 @@ set(kritadhcomfy_SOURCES
     DhComfyPlugin.cpp
     DhComfyDock.cpp
     DhComfyClient.cpp
+    DhComfySocket.cpp
     DhComfyWorkflow.cpp
 )
 kis_add_library(kritadhcomfy MODULE ${kritadhcomfy_SOURCES})

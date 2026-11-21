@@ -16,6 +16,7 @@
 #include <KoCanvasObserverBase.h>
 
 #include "DhComfyClient.h"
+#include "DhComfySocket.h"
 #include "DhComfyWorkflow.h"
 
 class KisCanvas2;
@@ -24,6 +25,7 @@ class QComboBox;
 class QFormLayout;
 class QLabel;
 class QLineEdit;
+class QProgressBar;
 class QPushButton;
 class QScrollArea;
 class QSpinBox;
@@ -63,11 +65,22 @@ private:
     void saveValues();
     QHash<QString, QJsonValue> savedValues(const QString &workflow) const;
     void updateButtons();
+    void onSocketMessage(const QString &type, const QJsonObject &data);
+    void updateProgress();
+    QString pickImage(const QString &key);
 
     QPointer<KisCanvas2> m_canvas;
 
     DhComfy::Client *m_client;
     DhComfy::Job *m_job;
+    DhComfy::Socket *m_socket;
+
+    // live progress of the current run (from the websocket)
+    QJsonObject m_runPrompt;
+    QSet<QString> m_doneNodes;
+    QString m_runningNode;
+    int m_stepValue {0};
+    int m_stepMax {0};
     DhComfy::NodeInfo m_nodes;
     bool m_connected {false};
 
@@ -85,6 +98,8 @@ private:
     QPushButton *m_connectButton {nullptr};
     QLabel *m_serverInfo {nullptr};
     QComboBox *m_workflows {nullptr};
+    QCheckBox *m_showAll {nullptr};
+    QHash<QString, QString> m_picked; ///< ImageInput key -> image picked on the device
     QPushButton *m_refreshButton {nullptr};
     QScrollArea *m_scroll {nullptr};
     QWidget *m_controlsHost {nullptr};
@@ -96,6 +111,8 @@ private:
     QPushButton *m_generate {nullptr};
     QPushButton *m_cancel {nullptr};
     QLabel *m_status {nullptr};
+    QProgressBar *m_progress {nullptr};
+    QLabel *m_preview {nullptr};
 };
 
 #endif // DH_COMFY_DOCK_H

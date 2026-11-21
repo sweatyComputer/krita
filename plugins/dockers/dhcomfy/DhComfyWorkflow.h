@@ -68,6 +68,7 @@ struct KritaInputs {
     bool hasSelection {false};
     QRect rect;                ///< canvas area sent (x/y offset, w/h)
     qint64 seed {0};           ///< fresh random seed for this run
+    QHash<QString, QString> imageFiles; ///< ImageInput control key -> uploaded file (active layer / picked image)
 };
 
 /// Where a result goes.
@@ -76,6 +77,7 @@ struct OutputNode {
     int offsetX {0};
     int offsetY {0};
     QString name;
+    bool keepSize {false}; ///< Krita Output "resize canvas": don't fit, grow the document instead
 };
 
 struct Prepared {
@@ -117,6 +119,10 @@ Prepared prepare(const QJsonObject &api,
                  const QVector<Control> &controls,
                  const QHash<QString, QJsonValue> &values,
                  const KritaInputs &krita);
+
+/// Why this workflow can't be used from Krita ("" = fine): 3D / video
+/// pipelines and anything with no image output.
+QString unsupportedReason(const QJsonObject &api);
 
 /// Readable text from a /prompt error response or a /history error status.
 QString describePromptError(const QJsonObject &response);

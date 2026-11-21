@@ -17,8 +17,12 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QProgressBar>
+#include <QSet>
 #include <QPushButton>
 #include <QRandomGenerator>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -36,6 +40,11 @@
 #include <kis_pixel_selection.h>
 #include <kis_selection.h>
 #include <kis_slider_spin_box.h>
+#include <kis_filter_strategy.h>
+#include <KoFileDialog.h>
+
+#include <QFileInfo>
+#include <QImageReader>
 
 using namespace DhComfy;
 
@@ -68,11 +77,19 @@ DhComfyDock::DhComfyDock()
     : QDockWidget(i18n("DH Comfy"))
     , m_client(new Client(this))
     , m_job(new Job(m_client, this))
+    , m_socket(new Socket(this))
 {
     buildUi();
     connect(m_job, &Job::status, this, [this](const QString &t) { setStatus(t); });
     connect(m_job, &Job::finished, this, &DhComfyDock::slotJobFinished);
     connect(m_job, &Job::failed, this, &DhComfyDock::slotJobFailed);
+    connect(m_socket, &Socket::message, this, &DhComfyDock::onSocketMessage);
+    connect(m_socket, &Socket::preview, this, [this](const QImage &img) {
+        if (!m_job->isRunning()) return;
+        const int w = qMax(64, m_status->width());
+        m_preview->setPixmap(QPixmap::fromImage(img.scaled(w, w * 3 / 4, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+        m_preview->show();
+    });
 
     const QString server = config().readEntry("server", QString());
     m_server->setText(server);
@@ -94,7 +111,8 @@ void DhComfyDock::buildUi()
     // server
     QHBoxLayout *srv = new QHBoxLayout();
     m_server = new QLineEdit(page);
-    m_server->setPlaceholderText(i18n("PC address, e.g. 192.168.1.20:8188"));
+    m_server->setPlaceholderText(i18n("PC address, e.g. 100.101.102.103"));
+    m_server->setToolTip(i18n("Your PC's Tailscale IP or name. The port defaults to 8188; add :port only if you changed it."));
     m_server->setInputMethodHints(Qt::ImhNoAutoUppercase | Qt::ImhUrlCharactersOnly);
     m_connectButton = new QPushButton(i18n("Connect"), page);
     srv->addWidget(m_server, 1);
@@ -110,7 +128,12 @@ void DhComfyDock::buildUi()
     m_workflows->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_workflows->setMinimumContentsLength(10);
     m_refreshButton = new QPushButton(i18n("Refresh"), page);
+    m_showAll = new QCheckBox(i18n("All"), page);
+    m_showAll->setToolTip(i18n("Off: only workflows in ComfyUI's workflows/krita folder. "
+                               "On: every image workflow (3D ones are always hidden)."));
+    m_showAll->setChecked(config().readEntry("showAll", false));
     wf->addWidget(m_workflows, 1);
+    wf->addWidget(m_showAll);
     wf->addWidget(m_refreshButton);
     v->addLayout(wf);
 
@@ -120,7 +143,7 @@ void DhComfyDock::buildUi()
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_controlsHost = new QWidget(m_scroll);
     m_form = new QFormLayout(m_controlsHost);
-    m_form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    m_form->setRowWrapPolicy(QFormLayout::WrapAllRows); // label above, field full width: usable on a tablet
     m_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     m_scroll->setWidget(m_controlsHost);
     v->addWidget(m_scroll, 1);
@@ -164,6 +187,18 @@ void DhComfyDock::buildUi()
     run->addWidget(m_cancel, 1);
     v->addLayout(run);
 
+    m_progress = new QProgressBar(page);
+    m_progress->setRange(0, 1000);
+    m_progress->setTextVisible(true);
+    m_progress->setMinimumHeight(28);
+    m_progress->hide();
+    v->addWidget(m_progress);
+
+    m_preview = new QLabel(page);
+    m_preview->setAlignment(Qt::AlignCenter);
+    m_preview->hide();
+    v->addWidget(m_preview);
+
     m_status = new QLabel(page);
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -174,6 +209,10 @@ void DhComfyDock::buildUi()
     connect(m_connectButton, &QPushButton::clicked, this, &DhComfyDock::slotConnect);
     connect(m_server, &QLineEdit::returnPressed, this, &DhComfyDock::slotConnect);
     connect(m_refreshButton, &QPushButton::clicked, this, &DhComfyDock::slotRefreshWorkflows);
+    connect(m_showAll, &QCheckBox::toggled, this, [this](bool on) {
+        config().writeEntry("showAll", on);
+        if (m_connected) slotRefreshWorkflows();
+    });
     connect(m_workflows, QOverload<int>::of(&QComboBox::activated), this, &DhComfyDock::slotWorkflowChosen);
     connect(m_generate, &QPushButton::clicked, this, &DhComfyDock::slotGenerate);
     connect(m_cancel, &QPushButton::clicked, this, &DhComfyDock::slotCancel);
@@ -261,6 +300,7 @@ void DhComfyDock::slotConnect()
                 return;
             }
             m_nodes = NodeInfo::fromJson(r2.body);
+            m_socket->open(m_client->server(), m_client->clientId()); // live progress
             setConnected(true);
             setStatus(i18n("Connected: %1 node types.", m_nodes.size()));
             slotRefreshWorkflows();
@@ -279,10 +319,19 @@ void DhComfyDock::slotRefreshWorkflows()
             setStatus(i18n("Couldn't list workflows (%1).", r.error), true);
             return;
         }
+        // Krita workflows live in workflows/krita, apart from the ones used on the PC,
+        // so tinkering there can't break them. 3D pipelines never make sense here.
+        static const QRegularExpression threeD("(^|[^a-z0-9])3d([^a-z0-9]|$)", QRegularExpression::CaseInsensitiveOption);
+        const bool all = m_showAll->isChecked();
         QStringList names;
+        int kritaCount = 0;
         for (const QJsonValue &v : r.json().array()) {
             const QString n = v.toString();
-            if (n.endsWith(".json", Qt::CaseInsensitive)) names << n;
+            if (!n.endsWith(".json", Qt::CaseInsensitive)) continue;
+            if (n.contains(threeD)) continue;
+            const bool krita = n.startsWith("krita/", Qt::CaseInsensitive);
+            if (krita) kritaCount++;
+            if (all || krita) names << n;
         }
         names.sort(Qt::CaseInsensitive);
 
@@ -292,6 +341,7 @@ void DhComfyDock::slotRefreshWorkflows()
         for (const QString &n : names) {
             QString label = n;
             label.chop(5);
+            if (!all && label.startsWith("krita/", Qt::CaseInsensitive)) label = label.mid(6);
             m_workflows->addItem(label, n);
         }
         const int idx = m_workflows->findData(want);
@@ -299,7 +349,9 @@ void DhComfyDock::slotRefreshWorkflows()
             m_workflows->setCurrentIndex(idx);
             loadWorkflow(want);
         } else if (names.isEmpty()) {
-            setStatus(i18n("No saved workflows on the server yet. Save one in ComfyUI (Workflow > Save)."));
+            setStatus(all || kritaCount
+                ? i18n("No saved workflows on the server yet. Save one in ComfyUI (Workflow > Save).")
+                : i18n("No workflows in the krita folder yet. In ComfyUI, save as \"krita/<name>\", or tick All."));
         }
     });
 }
@@ -321,7 +373,11 @@ void DhComfyDock::loadWorkflow(const QString &name)
             return;
         }
         QString error;
-        const QJsonObject api = toApi(r.json().object(), m_nodes, &error);
+        QJsonObject api = toApi(r.json().object(), m_nodes, &error);
+        if (!api.isEmpty()) {
+            error = unsupportedReason(api);
+            if (!error.isEmpty()) api = QJsonObject();
+        }
         if (api.isEmpty()) {
             m_api = QJsonObject();
             m_controls.clear();
@@ -363,7 +419,8 @@ void DhComfyDock::rebuildControls()
             e->setPlainText(v.toString());
             e->setTabChangesFocus(true);
             const int line = e->fontMetrics().lineSpacing();
-            e->setFixedHeight(line * (c.kind == Control::Prompt ? 5 : 3) + 12);
+            e->setMinimumHeight(line * (c.kind == Control::Prompt ? 6 : 3) + 12);
+            e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
             m_form->addRow(c.label, e);
             m_getters.insert(c.key, [e]() { return QJsonValue(e->toPlainText()); });
             break;
@@ -444,7 +501,41 @@ void DhComfyDock::rebuildControls()
             });
             break;
         }
-        case Control::ImageInput:
+        case Control::ImageInput: {
+            QWidget *row = new QWidget(m_controlsHost);
+            QVBoxLayout *col = new QVBoxLayout(row);
+            col->setContentsMargins(0, 0, 0, 0);
+            QHBoxLayout *h = new QHBoxLayout();
+            QComboBox *cb = new QComboBox(row);
+            cb->addItems(c.options);
+            cb->setCurrentIndex(qBound(0, v.toInt(), c.options.size() - 1));
+            QPushButton *pick = new QPushButton(i18n("Pick…"), row);
+            QLabel *file = new QLabel(row);
+            file->setWordWrap(true);
+            const QString key = c.key;
+            if (!m_picked.contains(key)) m_picked.insert(key, config().readEntry(QStringLiteral("picked:%1").arg(key), QString()));
+            auto refresh = [cb, pick, file, key, this]() {
+                const bool device = cb->currentIndex() == 2;
+                pick->setVisible(device);
+                file->setVisible(device);
+                const QString p = m_picked.value(key);
+                file->setText(p.isEmpty() ? i18n("No image picked") : QFileInfo(p).fileName());
+            };
+            connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), row, [refresh, cb, key, this](int i) {
+                if (i == 2 && m_picked.value(key).isEmpty()) pickImage(key);
+                refresh();
+                Q_UNUSED(cb);
+            });
+            connect(pick, &QPushButton::clicked, row, [this, key, refresh]() { pickImage(key); refresh(); });
+            h->addWidget(cb, 1);
+            h->addWidget(pick);
+            col->addLayout(h);
+            col->addWidget(file);
+            refresh();
+            m_form->addRow(c.label, row);
+            m_getters.insert(c.key, [cb]() { return QJsonValue(cb->currentIndex()); });
+            break;
+        }
         case Control::MaskInput: {
             QComboBox *cb = new QComboBox(m_controlsHost);
             cb->addItems(c.options);
@@ -458,6 +549,19 @@ void DhComfyDock::rebuildControls()
     if (m_controls.isEmpty() && !m_api.isEmpty()) {
         m_form->addRow(new QLabel(i18n("No settings to show: the workflow runs as saved."), m_controlsHost));
     }
+}
+
+QString DhComfyDock::pickImage(const QString &key)
+{
+    KoFileDialog dlg(this, KoFileDialog::OpenFile, QStringLiteral("DhComfyPickImage"));
+    dlg.setCaption(i18n("Image for the workflow"));
+    dlg.setMimeTypeFilters(QStringList {"image/png", "image/jpeg", "image/webp", "image/bmp", "image/tiff"});
+    const QString f = dlg.filename();
+    if (!f.isEmpty()) {
+        m_picked.insert(key, f);
+        config().writeEntry(QStringLiteral("picked:%1").arg(key), f);
+    }
+    return f;
 }
 
 QHash<QString, QJsonValue> DhComfyDock::currentValues() const
@@ -556,17 +660,104 @@ void DhComfyDock::slotGenerate()
         uploads.append({k.selectionMaskFile, encodePng(mask)});
     }
 
+    // other image sources: the active layer (same area as the canvas) or a picked file
+    QByteArray layerPng;
+    int picks = 0;
+    for (const Control &c : m_controls) {
+        if (c.kind != Control::ImageInput) continue;
+        const int src = values.value(c.key, c.value).toInt();
+        if (src == 1) {
+            if (layerPng.isEmpty()) {
+                KisNodeSP node = vm->activeNode();
+                if (!node || !node->projection()) continue;
+                image->barrierLock(true);
+                const QImage layer = node->projection()->convertToQImage(nullptr, rect);
+                image->unlock();
+                layerPng = encodePng(layer.convertToFormat(QImage::Format_ARGB32));
+                uploads.append({QStringLiteral("dhcomfy_layer.png"), layerPng});
+            }
+            k.imageFiles.insert(c.key, QStringLiteral("dhcomfy_layer.png"));
+        } else if (src == 2) {
+            const QString path = m_picked.value(c.key);
+            if (path.isEmpty()) continue; // prepare() explains
+            QImageReader reader(path);
+            reader.setAutoTransform(true);
+            const QImage img = reader.read();
+            if (img.isNull()) {
+                setStatus(i18n("Couldn't read %1 (%2). Pick it again?", QFileInfo(path).fileName(), reader.errorString()), true);
+                return;
+            }
+            const QString name = QStringLiteral("dhcomfy_pick_%1.png").arg(picks++);
+            uploads.append({name, encodePng(img.convertToFormat(QImage::Format_ARGB32))});
+            k.imageFiles.insert(c.key, name);
+        }
+    }
+
     const Prepared p = prepare(m_api, m_controls, values, k);
     if (!p.error.isEmpty()) {
         setStatus(p.error, true);
         return;
     }
 
+    m_runPrompt = p.prompt;
+    m_doneNodes.clear();
+    m_runningNode.clear();
+    m_stepValue = m_stepMax = 0;
+    m_progress->setValue(0);
+    m_progress->setFormat(i18n("Starting…"));
+    m_progress->show();
+    m_preview->clear();
+    m_preview->hide();
+
     m_runRect = rect;
     m_runSelection = (useSel && m_maskResult->isChecked()) ? selImg : QImage();
     m_runName = m_workflows->currentText();
     m_job->start(uploads, p.prompt, p.outputs);
     updateButtons();
+}
+
+void DhComfyDock::onSocketMessage(const QString &type, const QJsonObject &data)
+{
+    if (!m_job->isRunning() || m_runPrompt.isEmpty()) return;
+    const QString pid = data.value("prompt_id").toString();
+    if (!m_job->promptId().isEmpty() && !pid.isEmpty() && pid != m_job->promptId()) return;
+
+    if (type == "execution_cached") {
+        for (const QJsonValue &n : data.value("nodes").toArray()) m_doneNodes.insert(n.toVariant().toString());
+    } else if (type == "executing") {
+        if (!m_runningNode.isEmpty()) m_doneNodes.insert(m_runningNode);
+        m_runningNode = data.value("node").toVariant().toString();
+        m_stepValue = m_stepMax = 0;
+    } else if (type == "progress") {
+        m_runningNode = data.value("node").toVariant().toString();
+        m_stepValue = data.value("value").toInt();
+        m_stepMax = data.value("max").toInt();
+    } else if (type == "executed") {
+        m_doneNodes.insert(data.value("node").toVariant().toString());
+    } else {
+        return;
+    }
+    updateProgress();
+}
+
+void DhComfyDock::updateProgress()
+{
+    const int total = qMax(1, m_runPrompt.size());
+    double done = m_doneNodes.size();
+    if (!m_runningNode.isEmpty() && !m_doneNodes.contains(m_runningNode) && m_stepMax > 0) {
+        done += double(m_stepValue) / m_stepMax;
+    }
+    m_progress->setValue(int(qBound(0.0, done / total, 1.0) * 1000));
+
+    QString what;
+    if (!m_runningNode.isEmpty()) {
+        const QJsonObject node = m_runPrompt.value(m_runningNode).toObject();
+        what = node.value("_meta").toObject().value("title").toString(node.value("class_type").toString());
+    }
+    const int pct = int(qBound(0.0, done / total, 1.0) * 100);
+    if (m_stepMax > 0) m_progress->setFormat(QStringLiteral("%1%  ·  %2  %3/%4").arg(pct).arg(what).arg(m_stepValue).arg(m_stepMax));
+    else if (!what.isEmpty()) m_progress->setFormat(QStringLiteral("%1%  ·  %2").arg(pct).arg(what));
+    else m_progress->setFormat(QStringLiteral("%1%").arg(pct));
 }
 
 void DhComfyDock::slotCancel()
@@ -577,12 +768,16 @@ void DhComfyDock::slotCancel()
 
 void DhComfyDock::slotJobFailed(const QString &message)
 {
+    m_progress->hide();
+    m_preview->hide();
     setStatus(message, message != i18n("Cancelled.") && message != QStringLiteral("Cancelled."));
     updateButtons();
 }
 
 void DhComfyDock::slotJobFinished(const QVector<Result> &results)
 {
+    m_progress->hide();
+    m_preview->hide();
     updateButtons();
     if (!m_canvas) {
         setStatus(i18n("Finished, but the document was closed."), true);
@@ -595,6 +790,13 @@ void DhComfyDock::slotJobFinished(const QVector<Result> &results)
     int n = 0;
     for (const Result &r : results) {
         QImage img = r.image.convertToFormat(QImage::Format_ARGB32);
+        // upscalers: on the whole canvas, grow the document to the result instead of shrinking it
+        if (r.output.keepSize && m_runRect == image->bounds() && img.width() > m_runRect.width()
+            && m_runSelection.isNull()) {
+            image->scaleImage(img.size(), image->xRes(), image->yRes(),
+                              KisFilterStrategyRegistry::instance()->value("Bicubic"));
+            m_runRect = QRect(QPoint(0, 0), img.size());
+        }
         if (m_fitResult->isChecked() && img.size() != m_runRect.size()) {
             img = img.scaled(m_runRect.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         }

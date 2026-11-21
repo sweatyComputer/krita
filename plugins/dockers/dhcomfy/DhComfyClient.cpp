@@ -168,7 +168,9 @@ void Job::uploadNext()
 void Job::queuePrompt()
 {
     Q_EMIT status(QStringLiteral("Queueing…"));
-    const QJsonObject body {{"prompt", m_prompt}, {"client_id", m_client->clientId()}};
+    // live sampler previews for this job only (ComfyUI's default is none)
+    const QJsonObject body {{"prompt", m_prompt}, {"client_id", m_client->clientId()},
+                            {"extra_data", QJsonObject {{"preview_method", "auto"}}}};
     m_client->postJson(QStringLiteral("/prompt"), body, [this](const Reply &r) {
         if (!m_running) return;
         const QJsonObject o = r.json().object();

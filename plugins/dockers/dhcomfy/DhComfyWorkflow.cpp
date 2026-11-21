@@ -126,7 +126,7 @@ struct ULink {
 ULink parseLink(const QJsonValue &v, const QString &prefix)
 {
     ULink l;
-    auto pid = [&](const QJsonValue &x) {
+    auto pid = [&](const QJsonValue &x) -> QString {
         const QString s = idString(x);
         // -10 / -20 are a subgraph's own input / output pseudo-nodes
         if (s == "-10" || s == "-20") return s;
@@ -816,10 +816,20 @@ QVector<Control> analyse(const QJsonObject &api, const NodeInfo &nodes)
     QVector<Control> out;
     const Consumers cons = buildConsumers(api);
     int order = 0;
-    bool firstImage = true;
+    // with a Krita Canvas node the canvas already goes in that way: extra
+    // Load Image nodes are references, best picked on the device
+    bool hasCanvasNode = false;
+    for (auto it = api.begin(); it != api.end(); ++it) {
+        if (it.value().toObject().value("class_type").toString() == "ETN_KritaCanvas") hasCanvasNode = true;
+    }
+    bool firstImage = !hasCanvasNode;
 
-    static const QSet<QString> modelInputs {"ckpt_name", "unet_name", "lora_name", "model_name", "vae_name",
-                                            "clip_name", "clip_name1", "clip_name2", "clip_name3", "control_net_name"};
+    static const QSet<QString> classicModelInputs {"ckpt_name", "unet_name", "lora_name", "model_name", "vae_name",
+                                                   "clip_name", "control_net_name"};
+    // all-in-one nodes (e.g. the DH ones) name their model pickers differently
+    static const QSet<QString> modelInputs = classicModelInputs + QSet<QString> {
+        "clip_name1", "clip_name2", "clip_name3", "diffusion_model", "text_encoder", "vae", "clip", "model",
+        "checkpoint", "upscale_model", "lora", "lora_1", "lora_2", "lora_3"};
     static const QSet<QString> samplingNumbers {"steps", "cfg", "denoise", "guidance", "shift"};
     static const QSet<QString> samplingChoices {"sampler_name", "scheduler"};
     static const QRegularExpression orderPrefix("^\\s*(\\d+)\\.\\s*");
@@ -904,8 +914,9 @@ QVector<Control> analyse(const QJsonObject &api, const NodeInfo &nodes)
                 c.kind = Control::ImageInput;
                 c.group = "Inputs";
                 c.label = title;
-                c.options = QStringList {QStringLiteral("Canvas"), QStringLiteral("File: %1").arg(v.toString())};
-                c.value = firstImage ? 0 : 1;
+                c.options = QStringList {QStringLiteral("Canvas"), QStringLiteral("Active layer"),
+                                         QStringLiteral("Image from device…"), QStringLiteral("File: %1").arg(v.toString())};
+                c.value = firstImage ? 0 : (hasCanvasNode ? 2 : 3);
                 firstImage = false;
             } else if (cls == "LoadImageMask" && name == "image") {
                 c.kind = Control::MaskInput;
@@ -913,8 +924,13 @@ QVector<Control> analyse(const QJsonObject &api, const NodeInfo &nodes)
                 c.label = title;
                 c.options = QStringList {QStringLiteral("Selection"), QStringLiteral("File: %1").arg(v.toString())};
                 c.value = 0;
-            } else if (t == "STRING" && (name == "text" || name == "prompt")) {
-                const int role = conditioningRole(api, cons, id);
+            } else if (t == "STRING" && (name == "negative_prompt" || name == "negative")) {
+                c.kind = Control::NegativePrompt;
+                c.group = "Prompts";
+                c.label = QStringLiteral("Negative");
+                c.order -= 50000;
+            } else if (t == "STRING" && (name == "text" || name == "prompt" || name == "positive_prompt")) {
+                const int role = name == "text" ? conditioningRole(api, cons, id) : 1;
                 c.kind = role < 0 ? Control::NegativePrompt : Control::Prompt;
                 c.group = "Prompts";
                 c.label = role < 0 ? QStringLiteral("Negative") : (role > 0 ? QStringLiteral("Prompt") : title);
@@ -937,22 +953,23 @@ QVector<Control> analyse(const QJsonObject &api, const NodeInfo &nodes)
             } else if (t == "COMBO" && modelInputs.contains(name)) {
                 c.kind = Control::Choice;
                 c.group = "Models";
-                c.label = title;
+                c.label = classicModelInputs.contains(name) ? title : title + " · " + prettyName(name);
                 c.options = comboOptions(spec);
             } else if (t == "COMBO" && samplingChoices.contains(name)) {
                 c.kind = Control::Choice;
                 c.group = "Sampling";
                 c.label = prettyName(name);
                 c.options = comboOptions(spec);
-            } else if (!sizeDone && t == "INT" && (name == "width" || name == "height") && cls.contains("Latent")
-                       && !isLink(inputs.value("width")) && !isLink(inputs.value("height"))) {
+            } else if (!sizeDone && t == "INT" && (name == "width" || name == "height")
+                       && inputs.value("width").isDouble() && inputs.value("height").isDouble()) {
                 sizeDone = true;
                 c.kind = Control::CanvasSize;
                 c.group = "Size";
                 c.input.clear();
                 c.key = id + "/size";
                 c.label = QStringLiteral("Match canvas size (%1)").arg(title);
-                c.value = true;
+                // empty latents: on by default; other sized nodes (resizers, AIO generators): opt in
+                c.value = cls.contains("Latent");
             } else {
                 continue;
             }
@@ -1021,6 +1038,14 @@ Prepared prepare(const QJsonObject &apiIn, const QVector<Control> &controls,
             if (v.toInt() == 0) {
                 if (k.canvasFile.isEmpty()) { r.error = QStringLiteral("No canvas to send."); return r; }
                 setInput(api, c.nodeId, c.input, k.canvasFile);
+            } else if (v.toInt() == 1 || v.toInt() == 2) {
+                const QString f = k.imageFiles.value(c.key);
+                if (f.isEmpty()) {
+                    r.error = v.toInt() == 1 ? QStringLiteral("%1: no active layer to send.").arg(c.label)
+                                             : QStringLiteral("%1: pick an image first.").arg(c.label);
+                    return r;
+                }
+                setInput(api, c.nodeId, c.input, f);
             }
             break;
         case Control::MaskInput:
@@ -1090,6 +1115,7 @@ Prepared prepare(const QJsonObject &apiIn, const QVector<Control> &controls,
                 o.offsetX = in.value("x").isDouble() ? in.value("x").toInt() : 0;
                 o.offsetY = in.value("y").isDouble() ? in.value("y").toInt() : 0;
                 o.name = in.value("name").toString();
+                o.keepSize = in.value("resize_canvas").toBool(false);
             }
             api.insert(id, makeNode("PreviewImage", {{"images", in.value("images")}}, "Krita output"));
             r.outputs.append(o);
@@ -1143,6 +1169,29 @@ Prepared prepare(const QJsonObject &apiIn, const QVector<Control> &controls,
 
     r.prompt = api;
     return r;
+}
+
+static bool isImageOutputClass(const QString &cls)
+{
+    return cls == "SaveImage" || cls == "PreviewImage" || cls == "SaveImageAdvanced" || cls == "ETN_KritaOutput"
+        || cls == "ETN_SendImageWebSocket" || cls == "SaveImageWebsocket"
+        || ((cls.contains("SaveImage") || cls.contains("PreviewImage") || cls.contains("Image Save"))
+            && !cls.contains("DataSet"));
+}
+
+QString unsupportedReason(const QJsonObject &api)
+{
+    bool images = false;
+    for (auto it = api.begin(); it != api.end(); ++it) {
+        const QString cls = it.value().toObject().value("class_type").toString();
+        if (cls.contains("3D") || cls.contains("Mesh") || cls.contains("Splat") || cls.contains("Trellis")
+            || cls.contains("Hunyuan3D", Qt::CaseInsensitive)) {
+            return QStringLiteral("This is a 3D workflow (%1), so there's nothing to put on the canvas.").arg(cls);
+        }
+        if (isImageOutputClass(cls)) images = true;
+    }
+    if (!images) return QStringLiteral("This workflow doesn't output images (no Save Image / Preview Image).");
+    return QString();
 }
 
 QString describePromptError(const QJsonObject &resp)
