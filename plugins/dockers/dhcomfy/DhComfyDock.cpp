@@ -637,6 +637,19 @@ void DhComfyDock::slotGenerate()
     k.rect = rect;
     k.hasSelection = useSel;
     k.seed = qint64(QRandomGenerator::global()->generate64() & 0x3FFFFFFFFFFFULL);
+
+    // Upload names unique per device and run (a ring of 8), so another tablet - or a
+    // second job queued behind one from the PC - can't overwrite this job's inputs
+    // before it gets to run.
+    KConfigGroup cfg = config();
+    QString device = cfg.readEntry("deviceId", QString());
+    if (device.isEmpty()) {
+        device = QString::number(QRandomGenerator::global()->generate(), 16);
+        cfg.writeEntry("deviceId", device);
+    }
+    const int slot = cfg.readEntry("uploadSlot", 0);
+    cfg.writeEntry("uploadSlot", (slot + 1) % 8);
+    const QString prefix = QStringLiteral("dhcomfy_%1_%2_").arg(device).arg(slot);
     if (wantCanvas) {
         QImage alpha(canvasImg.size(), QImage::Format_Grayscale8);
         const QImage argb = canvasImg.convertToFormat(QImage::Format_ARGB32);
@@ -645,8 +658,8 @@ void DhComfyDock::slotGenerate()
             uchar *dst = alpha.scanLine(y);
             for (int x = 0; x < argb.width(); x++) dst[x] = uchar(qAlpha(src[x]));
         }
-        k.canvasFile = QStringLiteral("dhcomfy_canvas.png");
-        k.canvasMaskFile = QStringLiteral("dhcomfy_canvas_alpha.png");
+        k.canvasFile = prefix + QStringLiteral("canvas.png");
+        k.canvasMaskFile = prefix + QStringLiteral("canvas_alpha.png");
         uploads.append({k.canvasFile, encodePng(argb)});
         uploads.append({k.canvasMaskFile, encodePng(alpha)});
     }
@@ -656,7 +669,7 @@ void DhComfyDock::slotGenerate()
             mask = QImage(rect.size(), QImage::Format_Grayscale8);
             mask.fill(255);
         }
-        k.selectionMaskFile = QStringLiteral("dhcomfy_selection.png");
+        k.selectionMaskFile = prefix + QStringLiteral("selection.png");
         uploads.append({k.selectionMaskFile, encodePng(mask)});
     }
 
@@ -674,9 +687,9 @@ void DhComfyDock::slotGenerate()
                 const QImage layer = node->projection()->convertToQImage(nullptr, rect);
                 image->unlock();
                 layerPng = encodePng(layer.convertToFormat(QImage::Format_ARGB32));
-                uploads.append({QStringLiteral("dhcomfy_layer.png"), layerPng});
+                uploads.append({prefix + QStringLiteral("layer.png"), layerPng});
             }
-            k.imageFiles.insert(c.key, QStringLiteral("dhcomfy_layer.png"));
+            k.imageFiles.insert(c.key, prefix + QStringLiteral("layer.png"));
         } else if (src == 2) {
             const QString path = m_picked.value(c.key);
             if (path.isEmpty()) continue; // prepare() explains
@@ -687,7 +700,7 @@ void DhComfyDock::slotGenerate()
                 setStatus(i18n("Couldn't read %1 (%2). Pick it again?", QFileInfo(path).fileName(), reader.errorString()), true);
                 return;
             }
-            const QString name = QStringLiteral("dhcomfy_pick_%1.png").arg(picks++);
+            const QString name = prefix + QStringLiteral("pick_%1.png").arg(picks++);
             uploads.append({name, encodePng(img.convertToFormat(QImage::Format_ARGB32))});
             k.imageFiles.insert(c.key, name);
         }
