@@ -6,6 +6,7 @@
 
 #include "KisDhRadialSettings.h"
 #include "DhRadialPresets.h"
+#include "DhRadialIcons.h"
 
 #include <QAction>
 #include <QCheckBox>
@@ -17,6 +18,9 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QKeyEvent>
+#include <QListView>
+#include <QSet>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -170,6 +174,137 @@ private:
     QVector<Entry> m_entries;
 };
 
+/**
+ * Grid picker over every icon that actually renders: the SVGs bundled in
+ * dhtools.qrc, Krita's own built-in icon library, and the icons attached to
+ * live actions. Each entry is resolved through DhRadialIcons::resolve() - the
+ * same path the menu paints with - so nothing broken can be offered.
+ */
+class DhIconPicker : public QDialog
+{
+public:
+    explicit DhIconPicker(QWidget *parent)
+        : QDialog(parent)
+    {
+        setWindowTitle(i18n("Pick an Icon"));
+        resize(620, 520);
+
+        QVBoxLayout *layout = new QVBoxLayout(this);
+
+        QHBoxLayout *top = new QHBoxLayout();
+        m_source = new QComboBox(this);
+        m_source->addItems(QStringList() << i18n("Bundled") << i18n("Krita library")
+                                         << i18n("Krita actions"));
+        top->addWidget(m_source);
+        m_search = new QLineEdit(this);
+        m_search->setPlaceholderText(i18n("Filter..."));
+        top->addWidget(m_search, 1);
+        layout->addLayout(top);
+
+        m_list = new QListWidget(this);
+        m_list->setViewMode(QListView::IconMode);
+        m_list->setIconSize(QSize(32, 32));
+        m_list->setGridSize(QSize(104, 72));
+        m_list->setResizeMode(QListView::Adjust);
+        m_list->setMovement(QListView::Static);
+        m_list->setWordWrap(true);
+        m_list->setUniformItemSizes(true);
+        layout->addWidget(m_list, 1);
+
+        QHBoxLayout *bar = new QHBoxLayout();
+        QPushButton *none = new QPushButton(i18n("No Icon"), this);
+        QPushButton *autoBtn = new QPushButton(i18n("Auto"), this);
+        none->setAutoDefault(false);
+        autoBtn->setAutoDefault(false);
+        bar->addWidget(none);
+        bar->addWidget(autoBtn);
+        bar->addStretch();
+        QDialogButtonBox *buttons =
+            new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        bar->addWidget(buttons);
+        layout->addLayout(bar);
+
+        connect(buttons, SIGNAL(accepted()), this, SLOT(accept()));
+        connect(buttons, SIGNAL(rejected()), this, SLOT(reject()));
+        connect(m_list, SIGNAL(itemDoubleClicked(QListWidgetItem *)), this, SLOT(accept()));
+        connect(none, &QPushButton::clicked, this, [this]() { m_forced = QStringLiteral("none"); accept(); });
+        connect(autoBtn, &QPushButton::clicked, this, [this]() { m_forced = QString(); m_useForced = true; accept(); });
+        connect(m_search, &QLineEdit::textChanged, this, [this](const QString &) { refill(); });
+        connect(m_source, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                [this](int) { refill(); });
+
+        refill();
+    }
+
+    /// The spec to store. Empty + accepted via "Auto" means clear the field.
+    QString chosen() const
+    {
+        if (m_useForced || !m_forced.isEmpty()) return m_forced;
+        QListWidgetItem *item = m_list->currentItem();
+        return item ? item->data(Qt::UserRole).toString() : QString();
+    }
+
+private:
+    struct Entry { QString spec; QString label; QIcon icon; };
+
+    const QVector<Entry> &entries(int source)
+    {
+        if (m_cache.contains(source)) return m_cache[source];
+        QVector<Entry> out;
+        auto add = [&out](const QString &spec, const QString &label) {
+            const QIcon icon = DhRadialIcons::resolve(spec, QString(), false);
+            if (!icon.isNull()) out.append({spec, label, icon});
+        };
+        if (source == 0) {
+            for (const QString &n : DhRadialIcons::bundledNames()) add(QStringLiteral("dh:") + n, n);
+        } else if (source == 1) {
+            for (const QString &n : DhRadialIcons::kritaLibraryNames()) add(QStringLiteral("kicon:") + n, n);
+        } else {
+            KisMainWindow *window = KisPart::instance()->currentMainwindow();
+            if (window && window->actionCollection()) {
+                QSet<QString> seen;
+                for (QAction *action : window->actionCollection()->actions()) {
+                    const QString id = action->objectName();
+                    if (id.isEmpty() || seen.contains(id)) continue;
+                    seen.insert(id);
+                    QString text = KLocalizedString::removeAcceleratorMarker(action->text());
+                    if (text.isEmpty()) text = id;
+                    add(QStringLiteral("krita:") + id, text);
+                }
+            }
+            std::sort(out.begin(), out.end(), [](const Entry &a, const Entry &b) {
+                return a.label.localeAwareCompare(b.label) < 0;
+            });
+        }
+        m_cache.insert(source, out);
+        return m_cache[source];
+    }
+
+    void refill()
+    {
+        m_list->clear();
+        const QString filter = m_search->text().trimmed();
+        for (const Entry &e : entries(m_source->currentIndex())) {
+            if (!filter.isEmpty() && !e.label.contains(filter, Qt::CaseInsensitive)
+                && !e.spec.contains(filter, Qt::CaseInsensitive)) {
+                continue;
+            }
+            QListWidgetItem *item = new QListWidgetItem(e.icon, e.label);
+            item->setData(Qt::UserRole, e.spec);
+            item->setToolTip(e.spec);
+            m_list->addItem(item);
+        }
+        if (m_list->count()) m_list->setCurrentRow(0);
+    }
+
+    QComboBox *m_source{nullptr};
+    QLineEdit *m_search{nullptr};
+    QListWidget *m_list{nullptr};
+    QMap<int, QVector<Entry>> m_cache;
+    QString m_forced;
+    bool m_useForced{false};
+};
+
 } // namespace
 
 KisDhRadialSettings::KisDhRadialSettings(QWidget *parent)
@@ -177,6 +312,25 @@ KisDhRadialSettings::KisDhRadialSettings(QWidget *parent)
 {
     buildUi();
     loadPreferences();
+
+    // Every QPushButton inside a QDialog is autoDefault, so Enter in a field
+    // used to "click" + Item. Strip that; keyPressEvent swallows the rest.
+    for (QPushButton *button : findChildren<QPushButton *>()) {
+        button->setAutoDefault(false);
+        button->setDefault(false);
+    }
+}
+
+void KisDhRadialSettings::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        if (QAbstractSpinBox *spin = qobject_cast<QAbstractSpinBox *>(focusWidget())) {
+            spin->interpretText();
+        }
+        event->accept();
+        return;
+    }
+    KisPreferenceSet::keyPressEvent(event);
 }
 
 KisDhRadialSettings::~KisDhRadialSettings()
@@ -279,9 +433,13 @@ QWidget *KisDhRadialSettings::buildItemsTab(QWidget *parent)
     colourRow->addStretch();
     form->addRow(i18n("Colour:"), colourRow);
 
+    QHBoxLayout *iconRow = new QHBoxLayout();
     m_icon = new QLineEdit(props);
-    m_icon->setPlaceholderText(i18n("dh:name | theme:name | krita:action_id | /path | blank = auto"));
-    form->addRow(i18n("Icon:"), m_icon);
+    m_icon->setPlaceholderText(i18n("dh:name | kicon:name | krita:action_id | /path | blank = auto"));
+    m_pickIcon = new QPushButton(i18n("Pick..."), props);
+    iconRow->addWidget(m_icon, 1);
+    iconRow->addWidget(m_pickIcon);
+    form->addRow(i18n("Icon:"), iconRow);
 
     m_tooltip = new QLineEdit(props);
     form->addRow(i18n("Tooltip:"), m_tooltip);
@@ -351,6 +509,7 @@ QWidget *KisDhRadialSettings::buildItemsTab(QWidget *parent)
     connect(m_label, SIGNAL(textEdited(QString)), this, SLOT(slotLabelEdited(QString)));
     connect(m_action, SIGNAL(textEdited(QString)), this, SLOT(slotActionEdited(QString)));
     connect(m_pick, SIGNAL(clicked()), this, SLOT(slotPickAction()));
+    connect(m_pickIcon, SIGNAL(clicked()), this, SLOT(slotPickIcon()));
     connect(m_swatch, SIGNAL(clicked()), this, SLOT(slotPickColour()));
     connect(m_inherit, SIGNAL(clicked()), this, SLOT(slotClearColour()));
     connect(m_addSibling, SIGNAL(clicked()), this, SLOT(slotAddSibling()));
@@ -989,6 +1148,7 @@ void KisDhRadialSettings::updateButtonStates()
     m_swatch->setEnabled(have);
     m_inherit->setEnabled(have);
     m_icon->setEnabled(have);
+    m_pickIcon->setEnabled(have);
     m_tooltip->setEnabled(have);
     m_shape->setEnabled(have);
     m_addChild->setEnabled(have);
@@ -1094,6 +1254,20 @@ void KisDhRadialSettings::slotIconEdited(const QString &text)
 {
     if (m_updatingFields) return;
     if (DhRadialItemSP item = currentItem()) item->icon = text;
+}
+
+void KisDhRadialSettings::slotPickIcon()
+{
+    if (!currentItem()) return;
+
+    DhIconPicker picker(this);
+    if (picker.exec() != QDialog::Accepted) return;
+
+    const QString spec = picker.chosen();
+    if (DhRadialItemSP item = currentItem()) item->icon = spec;
+    m_updatingFields = true;
+    m_icon->setText(spec);
+    m_updatingFields = false;
 }
 
 void KisDhRadialSettings::slotTooltipEdited(const QString &text)

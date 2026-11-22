@@ -25,6 +25,7 @@ class QCheckBox;
 class QComboBox;
 class QWidget;
 class QFormLayout;
+class QKeyEvent;
 
 /**
  * "DH Radial Menu" page in Configure Krita: a tree editor for the wedges,
@@ -72,6 +73,7 @@ private Q_SLOTS:
     void slotMoveUp();
     void slotMoveDown();
     void slotIconEdited(const QString &text);
+    void slotPickIcon();
     void slotTooltipEdited(const QString &text);
     void slotShapeChanged(int index);
     void slotLayoutChanged(int index);
@@ -84,6 +86,11 @@ private Q_SLOTS:
     void slotDrawerAlignChanged(int index);
     void slotApplyPreset();
     void slotDesignColourClicked();
+
+protected:
+    /// Swallow Enter/Return so it never reaches the Configure Krita dialog's
+    /// default button (or an autoDefault "+ Item"). Fields commit live.
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void buildUi();
@@ -127,6 +134,7 @@ private:
 
     // ----- per-item v2 fields -------------------------------------------
     QLineEdit *m_icon{nullptr};
+    QPushButton *m_pickIcon{nullptr};
     QLineEdit *m_tooltip{nullptr};
     QComboBox *m_shape{nullptr};
     QComboBox *m_layout{nullptr};

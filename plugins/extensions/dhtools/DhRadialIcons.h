@@ -9,6 +9,7 @@
 
 #include <QIcon>
 #include <QString>
+#include <QStringList>
 
 /**
  * Resolves an item's icon spec to a QIcon. Ported from the desktop plugin's
@@ -43,6 +44,14 @@ namespace DhRadialIcons
      * @param autoIcons whether to fall back to the action's own icon
      */
     QIcon resolve(const QString &spec, const QString &actionId, bool autoIcons);
+
+    /// Every icon name in Krita's built-in library (the compiled-in
+    /// ":/dark_x.svg" / ":/16_light_x.svg" resources), prefixes stripped, so
+    /// each is what KisIconUtils::loadIcon() / a "kicon:" spec wants. Sorted.
+    QStringList kritaLibraryNames();
+
+    /// Names of the SVGs bundled in dhtools.qrc (":/dhtools/icons"), sorted.
+    QStringList bundledNames();
 }
 
 #endif // DHRADIALICONS_H

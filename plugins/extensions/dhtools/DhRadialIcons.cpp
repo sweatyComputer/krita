@@ -8,14 +8,19 @@
 
 #include <QAction>
 #include <QByteArray>
+#include <QDirIterator>
+#include <QRegularExpression>
 #include <QFileInfo>
 #include <QHash>
 #include <QImage>
 #include <QSet>
 
+#include <algorithm>
+
 #include <kactioncollection.h>
 #include <KisPart.h>
 #include <KisMainWindow.h>
+#include <kis_icon_utils.h>
 
 namespace {
 
@@ -123,6 +128,20 @@ QIcon fromAction(const QString &actionId)
     return usable(action->icon()) ? action->icon() : QIcon();
 }
 
+/// "kicon:<name>" - Krita's own icon library, same lookup Krita's UI uses
+/// (picks dark_/light_ for the current theme). Not run through usable():
+/// SVG-backed QIcons can report no availableSizes() on Qt5, so only the
+/// render + fingerprint half of the check is applied here.
+QIcon fromLibrary(const QString &name)
+{
+    if (name.isEmpty()) return QIcon();
+    const QIcon icon = KisIconUtils::loadIcon(name);
+    if (icon.isNull()) return QIcon();
+    const QByteArray key = fingerprint(icon.pixmap(32, 32).toImage());
+    if (key.isEmpty() || placeholderFingerprints().contains(key)) return QIcon();
+    return icon;
+}
+
 QIcon fromFile(const QString &path)
 {
     if (!QFileInfo::exists(path)) return QIcon();
@@ -152,15 +171,54 @@ QIcon DhRadialIcons::resolve(const QString &spec, const QString &actionId, bool 
         result = themed(spec.mid(6));
     } else if (spec.startsWith(QLatin1String("krita:"))) {
         result = fromAction(spec);
+    } else if (spec.startsWith(QLatin1String("kicon:"))) {
+        result = fromLibrary(spec.mid(6));
     } else if (spec.contains(QLatin1Char('/')) || spec.contains(QLatin1Char('\\'))) {
         result = fromFile(spec);
     } else {
         // Bare name: bundled, then theme, then the action's own.
         result = bundled(spec);
         if (result.isNull()) result = themed(spec);
+        if (result.isNull()) result = fromLibrary(spec);
         if (result.isNull() && autoIcons) result = fromAction(actionId);
     }
 
     cache.insert(key, result);
     return result;
+}
+
+QStringList DhRadialIcons::kritaLibraryNames()
+{
+    static QStringList names;
+    static bool built = false;
+    if (built) return names;
+    built = true;
+
+    static const QRegularExpression re(
+        QStringLiteral("^(?:\\d+_)?(?:dark|light)_(.+)\\.(?:svg|svgz|png)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    QSet<QString> found;
+    QDirIterator it(QStringLiteral(":/"), QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QRegularExpressionMatch m = re.match(it.fileName());
+        if (m.hasMatch()) found.insert(m.captured(1));
+    }
+    names = found.values();
+    std::sort(names.begin(), names.end(),
+              [](const QString &a, const QString &b) { return a.compare(b, Qt::CaseInsensitive) < 0; });
+    return names;
+}
+
+QStringList DhRadialIcons::bundledNames()
+{
+    QStringList names;
+    QDirIterator it(QStringLiteral(":/dhtools/icons"));
+    while (it.hasNext()) {
+        it.next();
+        const QString file = it.fileName();
+        if (file.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive)) names << file.chopped(4);
+    }
+    names.sort(Qt::CaseInsensitive);
+    return names;
 }

@@ -17,6 +17,9 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QScrollBar>
+#include <QScroller>
+#include <QTextOption>
 #include <QProgressBar>
 #include <QSet>
 #include <QPushButton>
@@ -126,6 +129,8 @@ void DhComfyDock::buildUi()
     QHBoxLayout *wf = new QHBoxLayout();
     m_workflows = new QComboBox(page);
     m_workflows->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_workflows->setMinimumContentsLength(8);
+    m_workflows->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_workflows->setMinimumContentsLength(10);
     m_refreshButton = new QPushButton(i18n("Refresh"), page);
     m_showAll = new QCheckBox(i18n("All"), page);
@@ -141,11 +146,16 @@ void DhComfyDock::buildUi()
     m_scroll = new QScrollArea(page);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
+    // Never scroll sideways: a wide child (a long model name in a combo) used to
+    // make the whole form wider than the docker, so the prompt box ran off the
+    // right edge and looked like it wasn't wrapping.
+    m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_controlsHost = new QWidget(m_scroll);
     m_form = new QFormLayout(m_controlsHost);
     m_form->setRowWrapPolicy(QFormLayout::WrapAllRows); // label above, field full width: usable on a tablet
     m_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     m_scroll->setWidget(m_controlsHost);
+    QScroller::grabGesture(m_scroll->viewport(), QScroller::TouchGesture);
     v->addWidget(m_scroll, 1);
 
     // canvas options
@@ -418,6 +428,14 @@ void DhComfyDock::rebuildControls()
             QPlainTextEdit *e = new QPlainTextEdit(m_controlsHost);
             e->setPlainText(v.toString());
             e->setTabChangesFocus(true);
+            // Wrap to the box, and break long comma-joined tag strings anywhere
+            // rather than letting them run off the edge.
+            e->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+            e->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+            e->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            e->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+            // Finger drag scrolls; the stylus (mouse events) still selects text.
+            QScroller::grabGesture(e->viewport(), QScroller::TouchGesture);
             const int line = e->fontMetrics().lineSpacing();
             e->setMinimumHeight(line * (c.kind == Control::Prompt ? 6 : 3) + 12);
             e->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -464,6 +482,8 @@ void DhComfyDock::rebuildControls()
         }
         case Control::Choice: {
             QComboBox *cb = new QComboBox(m_controlsHost);
+            cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); // long names must not widen the docker
+            cb->setMinimumContentsLength(8);
             cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
             cb->setMinimumContentsLength(8);
             cb->addItems(c.options);
@@ -507,6 +527,8 @@ void DhComfyDock::rebuildControls()
             col->setContentsMargins(0, 0, 0, 0);
             QHBoxLayout *h = new QHBoxLayout();
             QComboBox *cb = new QComboBox(row);
+            cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); // long names must not widen the docker
+            cb->setMinimumContentsLength(8);
             cb->addItems(c.options);
             cb->setCurrentIndex(qBound(0, v.toInt(), c.options.size() - 1));
             QPushButton *pick = new QPushButton(i18n("Pick…"), row);
@@ -538,6 +560,8 @@ void DhComfyDock::rebuildControls()
         }
         case Control::MaskInput: {
             QComboBox *cb = new QComboBox(m_controlsHost);
+            cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); // long names must not widen the docker
+            cb->setMinimumContentsLength(8);
             cb->addItems(c.options);
             cb->setCurrentIndex(qBound(0, v.toInt(), c.options.size() - 1));
             m_form->addRow(c.label, cb);
