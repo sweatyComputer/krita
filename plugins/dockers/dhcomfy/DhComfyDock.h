@@ -91,7 +91,7 @@ private:
 
     // where the current run's results go
     QRect m_runRect;
-    QImage m_runSelection; ///< Grayscale8, empty when no selection
+    QImage m_runSelection; ///< Grayscale8, empty when no selection / mask
     QString m_runName;
 
     QLineEdit *m_server {nullptr};
@@ -104,6 +104,7 @@ private:
     QScrollArea *m_scroll {nullptr};
     QWidget *m_controlsHost {nullptr};
     QFormLayout *m_form {nullptr};
+    QComboBox *m_maskFrom {nullptr}; ///< DH-MASKFROM: selection / active layer as mask
     QCheckBox *m_useSelection {nullptr};
     QCheckBox *m_fitResult {nullptr};
     QCheckBox *m_maskResult {nullptr};

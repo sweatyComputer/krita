@@ -922,7 +922,7 @@ QVector<Control> analyse(const QJsonObject &api, const NodeInfo &nodes)
                 c.kind = Control::MaskInput;
                 c.group = "Inputs";
                 c.label = title;
-                c.options = QStringList {QStringLiteral("Selection"), QStringLiteral("File: %1").arg(v.toString())};
+                c.options = QStringList {QStringLiteral("Docker mask (selection / layer)"), QStringLiteral("File: %1").arg(v.toString())};
                 c.value = 0;
             } else if (t == "STRING" && (name == "negative_prompt" || name == "negative")) {
                 c.kind = Control::NegativePrompt;

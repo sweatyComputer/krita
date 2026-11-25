@@ -41,6 +41,7 @@
 #include <kis_paint_device.h>
 #include <kis_paint_layer.h>
 #include <kis_pixel_selection.h>
+#include <kis_mask.h>
 #include <kis_selection.h>
 #include <kis_slider_spin_box.h>
 #include <kis_filter_strategy.h>
@@ -159,11 +160,21 @@ void DhComfyDock::buildUi()
     v->addWidget(m_scroll, 1);
 
     // canvas options
-    m_useSelection = new QCheckBox(i18n("Use selection"), page);
-    m_useSelection->setToolTip(i18n("Send only the selected area (plus padding) and put the result back there."));
+    // DH-MASKFROM: where the inpaint mask comes from
+    m_maskFrom = new QComboBox(page);
+    m_maskFrom->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_maskFrom->setMinimumContentsLength(8);
+    m_maskFrom->addItems({i18n("Selection"), i18n("Active layer (white = change)"), i18n("Active layer (paint = change)")});
+    m_maskFrom->setToolTip(i18n("Mask for inpaint workflows.\n"
+                                "White = change: paint white where you want changes on a hidden layer.\n"
+                                "Paint = change: anywhere the active layer has paint.\n"
+                                "A selection mask or transparency mask works too: select it in the Layers docker."));
+    m_useSelection = new QCheckBox(i18n("Crop to selection / mask"), page);
+    m_useSelection->setToolTip(i18n("Send only the masked area (plus padding) and put the result back there."));
     m_fitResult = new QCheckBox(i18n("Fit result to area"), page);
     m_fitResult->setToolTip(i18n("Scale the result to the area that was sent. Turn off for upscalers."));
-    m_maskResult = new QCheckBox(i18n("Mask result to selection"), page);
+    m_maskResult = new QCheckBox(i18n("Mask result"), page);
+    m_maskResult->setToolTip(i18n("Keep the result only inside the selection / mask."));
     m_padding = new QSpinBox(page);
     m_padding->setRange(0, 1024);
     m_padding->setSuffix(i18n(" px"));
@@ -174,6 +185,12 @@ void DhComfyDock::buildUi()
     m_fitResult->setChecked(cfg.readEntry("fitResult", true));
     m_maskResult->setChecked(cfg.readEntry("maskResult", true));
     m_padding->setValue(cfg.readEntry("padding", 32));
+    m_maskFrom->setCurrentIndex(qBound(0, cfg.readEntry("maskFrom", 0), 2));
+
+    QHBoxLayout *opts0 = new QHBoxLayout();
+    opts0->addWidget(new QLabel(i18n("Mask from"), page));
+    opts0->addWidget(m_maskFrom, 1);
+    v->addLayout(opts0);
 
     QHBoxLayout *opts1 = new QHBoxLayout();
     opts1->addWidget(m_useSelection);
@@ -235,6 +252,7 @@ void DhComfyDock::buildUi()
         });
     }
     connect(m_padding, QOverload<int>::of(&QSpinBox::valueChanged), this, [](int v) { config().writeEntry("padding", v); });
+    connect(m_maskFrom, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [](int i) { config().writeEntry("maskFrom", i); });
 }
 
 void DhComfyDock::setCanvas(KoCanvasBase *canvas)
@@ -630,12 +648,80 @@ void DhComfyDock::slotGenerate()
     const bool wantCanvas = needsCanvas(m_api, m_controls, values);
     const bool wantMask = needsSelectionMask(m_api, m_controls, values);
 
+    // DH-MASKFROM: the mask is the selection, or the active layer read as a mask.
+    // Masks are sent white = change (LoadImageMask reads the red channel, no flip).
+    const int maskFrom = m_maskFrom->currentIndex(); // 0 selection, 1 layer luminance, 2 layer paint/alpha
+    const bool layerMask = maskFrom != 0;
+    QImage maskFull; // Grayscale8 over the whole image (layer modes)
+    QRect maskBounds;
+    if (layerMask) {
+        KisNodeSP node = vm->activeNode();
+        if (!node) {
+            setStatus(i18n("Mask from layer: there's no active layer."), true);
+            return;
+        }
+        KisMask *km = dynamic_cast<KisMask *>(node.data());
+        if (!km && maskFrom == 1 && wantCanvas && node->visible()) {
+            setStatus(i18n("Hide the mask layer first (eye icon in Layers), or its paint gets sent as part of the canvas."), true);
+            return;
+        }
+        const QRect b = image->bounds();
+        maskFull = QImage(b.size(), QImage::Format_Grayscale8);
+        bool ok = true;
+        image->barrierLock(true);
+        if (km && km->selection()) {
+            // selection / transparency masks: their own grayscale data
+            QVector<quint8> buf(b.width() * b.height());
+            km->selection()->projection()->readBytes(buf.data(), b);
+            for (int y = 0; y < b.height(); y++) {
+                memcpy(maskFull.scanLine(y), buf.constData() + y * b.width(), size_t(b.width()));
+            }
+        } else if (node->projection()) {
+            const QImage src = node->projection()->convertToQImage(nullptr, b).convertToFormat(QImage::Format_ARGB32);
+            for (int y = 0; y < b.height(); y++) {
+                const QRgb *px = reinterpret_cast<const QRgb *>(src.constScanLine(y));
+                uchar *dst = maskFull.scanLine(y);
+                for (int x = 0; x < b.width(); x++) {
+                    const int a = qAlpha(px[x]);
+                    dst[x] = uchar(maskFrom == 2 ? a : qGray(px[x]) * a / 255); // transparent = keep
+                }
+            }
+        } else {
+            ok = false;
+        }
+        image->unlock();
+        if (!ok) {
+            setStatus(i18n("Mask from layer: couldn't read the active layer."), true);
+            return;
+        }
+        int x0 = b.width(), y0 = b.height(), x1 = -1, y1 = -1;
+        for (int y = 0; y < b.height(); y++) {
+            const uchar *row = maskFull.constScanLine(y);
+            for (int x = 0; x < b.width(); x++) {
+                if (!row[x]) continue;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                y1 = y;
+            }
+        }
+        if (x1 < 0) {
+            setStatus(maskFrom == 1 ? i18n("The mask layer is all black or empty: paint white where you want changes.")
+                                    : i18n("The mask layer is empty: paint where you want changes."), true);
+            return;
+        }
+        maskBounds = QRect(QPoint(x0, y0), QPoint(x1, y1));
+    }
+
     // area to send
     KisSelectionSP selection = vm->selection();
-    const bool useSel = selection && m_useSelection->isChecked() && !selection->selectedExactRect().isEmpty();
+    const bool useSel = layerMask
+        || (selection && m_useSelection->isChecked() && !selection->selectedExactRect().isEmpty());
     QRect rect = image->bounds();
-    if (useSel) {
-        const int pad = m_padding->value();
+    const int pad = m_padding->value();
+    if (layerMask) {
+        if (m_useSelection->isChecked()) rect = maskBounds.adjusted(-pad, -pad, pad, pad).intersected(image->bounds());
+    } else if (useSel) {
         rect = selection->selectedExactRect().adjusted(-pad, -pad, pad, pad).intersected(image->bounds());
     }
     if (rect.isEmpty()) {
@@ -646,7 +732,9 @@ void DhComfyDock::slotGenerate()
     QImage canvasImg, selImg;
     image->barrierLock(true);
     if (wantCanvas) canvasImg = image->projection()->convertToQImage(nullptr, rect);
-    if (useSel) {
+    if (layerMask) {
+        selImg = maskFull.copy(rect);
+    } else if (useSel) {
         selImg = QImage(rect.size(), QImage::Format_Grayscale8);
         QVector<quint8> buf(rect.width() * rect.height());
         selection->projection()->readBytes(buf.data(), rect);
